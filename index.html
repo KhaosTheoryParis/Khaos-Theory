@@ -4,496 +4,57 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Khaos Theory — Jewelry</title>
+    <title>Khaos Theory</title>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap');
-
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
-        html {
-            scroll-behavior: smooth;
-        }
-
         body {
-            background: #050505;
-            color: #f2f2f2;
-            font-family: "Inter", Arial, sans-serif;
-            font-weight: 300;
-            letter-spacing: 0.08em;
-        }
-
-        /* =========================
-           HEADER
-        ========================= */
-
-        header {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 90px;
-
+            background: #000;
+            color: #fff;
+            min-height: 100vh;
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-
-            padding: 0 50px;
-
-            z-index: 1000;
-
-            background: linear-gradient(
-                to bottom,
-                rgba(5,5,5,0.95),
-                rgba(5,5,5,0)
-            );
-        }
-
-        .brand {
-            font-size: 15px;
-            font-weight: 500;
-            letter-spacing: 0.25em;
-            text-decoration: none;
-            color: white;
-        }
-
-        /* =========================
-           DESKTOP MENU
-        ========================= */
-
-        nav {
-            display: flex;
-            gap: 38px;
-        }
-
-        nav a {
-            position: relative;
-
-            color: #f2f2f2;
-            text-decoration: none;
-
-            font-size: 11px;
-            letter-spacing: 0.22em;
-
-            transition: opacity 0.3s ease;
-        }
-
-        nav a::after {
-            content: "";
-
-            position: absolute;
-            left: 0;
-            bottom: -7px;
-
-            width: 0;
-            height: 1px;
-
-            background: white;
-
-            transition: width 0.3s ease;
-        }
-
-        nav a:hover {
-            opacity: 0.65;
-        }
-
-        nav a:hover::after {
-            width: 100%;
-        }
-
-        /* =========================
-           HERO
-        ========================= */
-
-        .hero {
-            height: 100vh;
-            min-height: 650px;
-
-            display: flex;
-            flex-direction: column;
-
-            align-items: center;
             justify-content: center;
+            align-items: center;
+            font-family: Arial, Helvetica, sans-serif;
+        }
 
+        .container {
             text-align: center;
-
-            padding: 100px 30px 50px;
         }
 
         .logo {
-            width: 450px;
-            max-width: 75vw;
-
-            height: auto;
-
-            margin-bottom: 0px;
-
-            opacity: 0.96;
-
-            animation: appear 1.5s ease forwards;
+            width: 600px;
+            max-width: 70vw;
+            margin-bottom: 00px;
         }
 
-        .tagline {
-            font-size: 20px;
-            letter-spacing: 0.35em;
-
+        .under-construction {
+            font-size: 33px;
+            letter-spacing: 5px;
             text-transform: uppercase;
-
-            color: #aaa;
-
-            animation: appear 2s ease forwards;
+            font-weight: 300;
         }
-
-        .scroll {
-            position: absolute;
-
-            bottom: 35px;
-
-            font-size: 9px;
-            letter-spacing: 0.3em;
-
-            color: #777;
-
-            text-transform: uppercase;
-        }
-
-        /* =========================
-           SECTIONS
-        ========================= */
-
-        section {
-            min-height: 100vh;
-
-            padding: 150px 8vw;
-
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-
-        .section-title {
-            font-size: 12px;
-            letter-spacing: 0.35em;
-
-            text-transform: uppercase;
-
-            margin-bottom: 50px;
-
-            color: #999;
-        }
-
-        .section-content {
-            max-width: 700px;
-
-            font-size: 28px;
-            line-height: 1.6;
-
-            letter-spacing: 0.02em;
-        }
-
-        /* =========================
-           SHOP
-        ========================= */
-
-        .shop-grid {
-            display: grid;
-
-            grid-template-columns: repeat(3, 1fr);
-
-            gap: 20px;
-        }
-
-        .product {
-            height: 400px;
-
-            border: 1px solid #222;
-
-            display: flex;
-            align-items: center;
-            justify-content: center;
-
-            transition:
-                border-color 0.4s ease,
-                transform 0.4s ease;
-        }
-
-        .product:hover {
-            border-color: #777;
-            transform: translateY(-5px);
-        }
-
-        .product span {
-            font-size: 10px;
-            letter-spacing: 0.25em;
-
-            color: #777;
-        }
-
-        /* =========================
-           CONTACT
-        ========================= */
-
-        .contact {
-            text-align: center;
-            align-items: center;
-        }
-
-        .contact-email {
-            color: white;
-            text-decoration: none;
-
-            font-size: 22px;
-            letter-spacing: 0.08em;
-
-            border-bottom: 1px solid #444;
-
-            padding-bottom: 10px;
-
-            transition: border-color 0.3s ease;
-        }
-
-        .contact-email:hover {
-            border-color: white;
-        }
-
-        /* =========================
-           FOOTER
-        ========================= */
-
-        footer {
-            padding: 40px 50px;
-
-            display: flex;
-            justify-content: space-between;
-
-            font-size: 9px;
-
-            letter-spacing: 0.2em;
-
-            color: #555;
-
-            border-top: 1px solid #151515;
-        }
-
-        /* =========================
-           ANIMATION
-        ========================= */
-
-        @keyframes appear {
-
-            from {
-                opacity: 0;
-                transform: translateY(15px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-
-        }
-
-        /* =========================
-           MOBILE
-        ========================= */
-
-        @media (max-width: 700px) {
-
-            header {
-                height: 75px;
-                padding: 0 22px;
-            }
-
-            .brand {
-                font-size: 12px;
-            }
-
-            nav {
-                gap: 18px;
-            }
-
-            nav a {
-                font-size: 9px;
-                letter-spacing: 0.15em;
-            }
-
-            .logo {
-                width: 260px;
-            }
-
-            .tagline {
-                font-size: 8px;
-            }
-
-            section {
-                padding: 120px 25px;
-            }
-
-            .section-content {
-                font-size: 21px;
-            }
-
-            .shop-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .product {
-                height: 300px;
-            }
-
-            footer {
-                padding: 30px 22px;
-
-                flex-direction: column;
-
-                gap: 15px;
-
-                text-align: center;
-            }
-        }
-
     </style>
 </head>
 
-
 <body>
 
-    <!-- =========================
-         MENU
-    ========================= -->
+    <div class="container">
 
-    <header>
+        <!-- LOGO KHAOS THEORY -->
+        <img src="logo.jpeg" alt="Khaos Theory" class="logo">
 
-        <a href="#home" class="brand">
-            KHAOS THEORY
-        </a>
+        <!-- TEXTE -->
+        <div class="under-construction">
+            Under Konstruction
+        </div>
 
-        <nav>
-            <a href="#collection">KOLLECTION</a>
-            <a href="#about">ABOUT</a>
-            <a href="#contact">KONTACT</a>
-        </nav>
-
-    </header>
-
-
-    <!-- =========================
-         HOME
-    ========================= -->
-
-    <main>
-
-        <section id="home" class="hero">
-
-            <img
-                src="logo.jpeg"
-                alt="Khaos Theory"
-                class="logo"
-            >
-
-            <div class="tagline">
-                Kontemporary Jewelry
-            </div>
-
-            <div class="scroll">
-                Scroll to explore
-            </div>
-
-        </section>
-
-
-        <!-- =========================
-             SHOP
-        ========================= -->
-
-        <section id="collection">
-
-            <div class="section-title">
-                Kollection
-            </div>
-
-            <div class="shop-grid">
-
-                <div class="product">
-                    <span>COMING SOON</span>
-                </div>
-
-                <div class="product">
-                    <span>COMING SOON</span>
-                </div>
-
-                <div class="product">
-                    <span>COMING SOON</span>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <!-- =========================
-             ABOUT
-        ========================= -->
-
-        <section id="about">
-
-            <div class="section-title">
-                About
-            </div>
-
-            <div class="section-content">
-
-                Khaos Theory explores the tension between
-                structure and disorder through contemporary
-                jewelry.
-
-            </div>
-
-        </section>
-
-
-        <!-- =========================
-             CONTACT
-        ========================= -->
-
-        <section id="contact" class="contact">
-
-            <div class="section-title">
-                Kontact
-            </div>
-
-            <a
-                href="mailto:khaostheoryparis@gmail.com"
-                class="contact-email"
-            >
-                khaostheoryparis@gmail.com
-            </a>
-
-        </section>
-
-    </main>
-
-
-    <!-- =========================
-         FOOTER
-    ========================= -->
-
-    <footer>
-
-        <span>
-            © 2026 KHAOS THEORY
-        </span>
-
-        <span>
-            PARIS
-        </span>
-
-    </footer>
-
+    </div>
 
 </body>
 </html>
