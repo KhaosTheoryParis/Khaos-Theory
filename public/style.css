@@ -436,6 +436,35 @@ nav a:hover::after {
     padding: 100px 30px 50px;
 }
 
+.construction-notice {
+    margin-bottom: 22px;
+    padding: 10px 18px;
+
+    color: white;
+    background: rgba(150, 0, 0, 0.88);
+    border: 1px solid #ff4a4a;
+    box-shadow: 0 0 18px rgba(255, 40, 40, 0.24);
+
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+
+    animation: appear 1.2s ease forwards, construction-pulse 2.4s ease-in-out 1.2s infinite;
+}
+
+@keyframes construction-pulse {
+    0%, 100% {
+        box-shadow: 0 0 12px rgba(255, 40, 40, 0.18);
+        transform: scale(1);
+    }
+
+    50% {
+        box-shadow: 0 0 28px rgba(255, 40, 40, 0.5);
+        transform: scale(1.025);
+    }
+}
+
 
 /* =========================
    LOGO
@@ -1213,6 +1242,13 @@ footer a:focus-visible {
 
     .logo {
         width: 260px;
+    }
+
+    .construction-notice {
+        margin-bottom: 16px;
+        padding: 8px 13px;
+        font-size: 14px;
+        letter-spacing: 0.2em;
     }
 
 
