@@ -520,6 +520,10 @@ section {
     justify-content: center;
 }
 
+#collection {
+    padding-top: 85px;
+}
+
 
 /* =========================
    SECTION TITLE
@@ -560,6 +564,7 @@ section {
 }
 
 #rings .section-title,
+#collection .section-title,
 .category-page .section-title {
     font-size: 22px;
 }
@@ -1102,6 +1107,7 @@ footer a:focus-visible {
 @media (max-width: 700px) {
 
     #rings .section-title,
+    #collection .section-title,
     .category-page .section-title,
     .category-page .category-note {
         font-size: 18px;
@@ -1204,6 +1210,10 @@ footer a:focus-visible {
 
     section {
         padding: 120px 25px;
+    }
+
+    #collection {
+        padding-top: 65px;
     }
 
 
