@@ -535,6 +535,11 @@ section {
     font-size: 22px;
 }
 
+#about .section-title,
+#contact .section-title {
+    font-size: 22px;
+}
+
 .category-page .category-note {
     font-size: 22px;
 }
@@ -1073,6 +1078,11 @@ footer a:focus-visible {
         font-size: 18px;
     }
 
+    #about .section-title,
+    #contact .section-title {
+        font-size: 18px;
+    }
+
     #rings .product-overlay {
         font-size: 18px;
     }
@@ -1155,7 +1165,11 @@ footer a:focus-visible {
 
 
     .tagline {
-        font-size: 8px;
+        width: 260px;
+        max-width: 75vw;
+
+        font-size: min(4.9vw, 17px);
+        white-space: nowrap;
     }
 
 

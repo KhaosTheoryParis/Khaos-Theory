@@ -14,7 +14,7 @@ const products = {
 };
 
 const ringSizes = [[48, "4.5"], [49, "5"], [50, "5.25"], [51, "5.5"], [52, "6"], [53, "6.5"], [54, "7"], [55, "7.25"], [56, "7.5"], [57, "8"], [58, "8.5"], [59, "8.75"], [60, "9"], [61, "9.5"], [62, "10"], [63, "10.25"], [64, "10.5"], [65, "11"], [66, "11.5"], [67, "12"], [68, "12.25"], [69, "12.5"], [70, "13"]];
-const craftsmanshipNote = "All our items are made from .925 silver. Because every finish is completed by hand, details may vary, making each piece unique.<br>Every item is made to order, and production times may vary.";
+const craftsmanshipNote = "All our items are made from .925 silver. Because every finish is completed by hand, details may vary, making each piece unique.<br><br>Every item is made to order, and production times may vary.";
 const formatPrice = (price) => `${price} €`;
 const readCart = () => { try { return JSON.parse(localStorage.getItem("khaosTheoryCart")) || []; } catch { return []; } };
 const saveCart = (cart) => localStorage.setItem("khaosTheoryCart", JSON.stringify(cart));
