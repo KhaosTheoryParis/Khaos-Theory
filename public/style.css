@@ -98,7 +98,7 @@ nav a {
 
     text-decoration: none;
 
-    font-size: 13px;
+    font-size: 16px;
 
     line-height: 1;
     letter-spacing: 0.22em;
@@ -155,7 +155,7 @@ nav a:hover::after {
     -webkit-appearance: none;
 
     font: inherit;
-    font-size: 13px;
+    font-size: 16px;
     line-height: 1;
     letter-spacing: 0.22em;
     cursor: pointer;
@@ -243,7 +243,7 @@ nav a:hover::after {
     -webkit-appearance: none;
 
     font: inherit;
-    font-size: 13px;
+    font-size: 16px;
     line-height: 1;
     letter-spacing: 0.22em;
     cursor: pointer;
@@ -530,6 +530,15 @@ section {
     text-transform: uppercase;
 }
 
+#rings .section-title,
+.category-page .section-title {
+    font-size: 22px;
+}
+
+.category-page .category-note {
+    font-size: 22px;
+}
+
 
 /* =========================
    SHOP
@@ -622,6 +631,14 @@ section {
 .product-overlay strong {
     font-size: 18px;
     font-weight: 400;
+}
+
+#rings .product-overlay {
+    font-size: 20px;
+}
+
+#rings .product-overlay strong {
+    font-size: 22px;
 }
 
 .product-card:hover,
@@ -722,8 +739,7 @@ section {
 }
 
 .product-information {
-    position: sticky;
-    top: 140px;
+    position: static;
 }
 
 .product-name {
@@ -751,7 +767,7 @@ section {
 }
 
 .product-craftsmanship {
-    margin-bottom: 36px;
+    margin: 42px 0 36px;
 
     color: #999;
     font-size: 16px;
@@ -1051,6 +1067,20 @@ footer a:focus-visible {
 
 @media (max-width: 700px) {
 
+    #rings .section-title,
+    .category-page .section-title,
+    .category-page .category-note {
+        font-size: 18px;
+    }
+
+    #rings .product-overlay {
+        font-size: 18px;
+    }
+
+    #rings .product-overlay strong {
+        font-size: 20px;
+    }
+
     header {
         height: 100px;
 
@@ -1076,14 +1106,14 @@ footer a:focus-visible {
 
 
     nav a {
-        font-size: 9px;
+        font-size: 11px;
 
         letter-spacing: 0.15em;
     }
 
 
     .collection-toggle {
-        font-size: 9px;
+        font-size: 11px;
 
         letter-spacing: 0.15em;
     }
@@ -1092,7 +1122,7 @@ footer a:focus-visible {
     .cart-toggle {
         gap: 5px;
 
-        font-size: 8px;
+        font-size: 10px;
         letter-spacing: 0.12em;
     }
 

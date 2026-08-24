@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const catalog = {
-  geometry: { name: "Geometry", amount: 27500 },
+  geometry: { name: "Geometry", amount: 25000 },
   "carved-cross": { name: "Karved Kross", amount: 20000 },
   "hollow-cross": { name: "Hollow Kross", amount: 20000 },
   "signet-corner": { name: "Signet Korner", amount: 20000 },

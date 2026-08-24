@@ -5,16 +5,16 @@ const cartToggle = document.querySelector(".cart-toggle");
 const cartSubmenu = document.querySelector(".cart-submenu");
 
 const products = {
-    geometry: { name: "Geometry", price: 275, description: "A Khaos Theory ring with a graphic, geometric profile.", images: ["Photos/Rings/KTR-GEOMETRY-001.jpg"] },
-    "carved-cross": { name: "Karved Kross", price: 200, description: "A Khaos Theory ring defined by a carved cross motif.", images: ["Photos/Rings/KTR-KARVED%20KROSS-001.jpg"] },
-    "hollow-cross": { name: "Hollow Kross", price: 200, description: "A Khaos Theory ring with a hollow cross detail.", images: ["Photos/Rings/KTR-HOLLOW%20KROSS-001.jpg"] },
-    "signet-corner": { name: "Signet Korner", price: 200, description: "A Khaos Theory signet ring with an angular corner profile.", images: ["Photos/Rings/KTR-SIGNET%20KORNER-001.jpg", "Photos/Rings/KTR-SIGNET%20KORNER-002.jpg"] },
-    "damaged-ring-i": { name: "Damaged Ring I", price: 150, description: "A Khaos Theory ring with a deliberately textured profile.", images: ["Photos/Rings/KTR-DAMAGED%20RING-001.jpg"] },
-    "damaged-ring-ii": { name: "Damaged Ring II", price: 150, description: "A second Khaos Theory Damaged Ring model with its own sculptural profile.", images: ["Photos/Rings/KTR-DAMAGED%20RING-002.jpg"] }
+    geometry: { name: "Geometry", price: 250, images: ["Photos/Rings/KTR-GEOMETRY-001.jpg"] },
+    "carved-cross": { name: "Karved Kross", price: 200, images: ["Photos/Rings/KTR-KARVED%20KROSS-001.jpg"] },
+    "hollow-cross": { name: "Hollow Kross", price: 200, images: ["Photos/Rings/KTR-HOLLOW%20KROSS-001.jpg"] },
+    "signet-corner": { name: "Signet Korner", price: 200, images: ["Photos/Rings/KTR-SIGNET%20KORNER-001.jpg", "Photos/Rings/KTR-SIGNET%20KORNER-002.jpg"] },
+    "damaged-ring-i": { name: "Damaged Ring I", price: 150, images: ["Photos/Rings/KTR-DAMAGED%20RING-001.jpg"] },
+    "damaged-ring-ii": { name: "Damaged Ring II", price: 150, images: ["Photos/Rings/KTR-DAMAGED%20RING-002.jpg"] }
 };
 
 const ringSizes = [[48, "4.5"], [49, "5"], [50, "5.25"], [51, "5.5"], [52, "6"], [53, "6.5"], [54, "7"], [55, "7.25"], [56, "7.5"], [57, "8"], [58, "8.5"], [59, "8.75"], [60, "9"], [61, "9.5"], [62, "10"], [63, "10.25"], [64, "10.5"], [65, "11"], [66, "11.5"], [67, "12"], [68, "12.25"], [69, "12.5"], [70, "13"]];
-const craftsmanshipNote = "Every items are made from .925 silver. Because every finish is completed by hand, details may vary, making each piece unique.";
+const craftsmanshipNote = "All our items are made from .925 silver. Because every finish is completed by hand, details may vary, making each piece unique.<br>Every item is made to order, and production times may vary.";
 const formatPrice = (price) => `${price} €`;
 const readCart = () => { try { return JSON.parse(localStorage.getItem("khaosTheoryCart")) || []; } catch { return []; } };
 const saveCart = (cart) => localStorage.setItem("khaosTheoryCart", JSON.stringify(cart));
@@ -94,7 +94,7 @@ if (productDetail) {
         productDetail.innerHTML = "<div class=\"section-title\">Product unavailable</div>";
     } else {
         document.title = `${product.name} — Khaos Theory`;
-        productDetail.innerHTML = `<div class="product-gallery"><div class="product-image-frame"><img class="product-main-image is-visible" src="${product.images[0]}" alt="Khaos Theory ${product.name} ring"><button class="gallery-arrow gallery-arrow-previous" type="button" aria-label="Previous photo">←</button><button class="gallery-arrow gallery-arrow-next" type="button" aria-label="Next photo">→</button><span class="gallery-counter">1 / ${product.images.length}</span></div></div><div class="product-information"><p class="product-name">${product.name}</p><p class="product-price">${formatPrice(product.price)}</p><p class="product-description">${product.description}</p><p class="product-craftsmanship">${craftsmanshipNote}</p><form class="add-to-cart-form" data-product-id="${productId}"><label for="ring-size">Size</label><select id="ring-size" name="size" required>${ringSizes.map(([fr, us]) => `<option value="${fr}" data-us-size="${us}">FR ${fr} — US ${us}</option>`).join("")}</select><label for="ring-quantity">Quantity</label><select id="ring-quantity" name="quantity" required>${[1, 2, 3, 4, 5].map((quantity) => `<option value="${quantity}">${quantity}</option>`).join("")}</select><button class="add-to-cart-button" type="submit">ADD TO KART</button><p class="add-to-cart-confirmation" aria-live="polite"></p></form><p class="size-note">French and US size equivalents are indicative.</p></div>`;
+        productDetail.innerHTML = `<div class="product-gallery"><div class="product-image-frame"><img class="product-main-image is-visible" src="${product.images[0]}" alt="Khaos Theory ${product.name} ring"><button class="gallery-arrow gallery-arrow-previous" type="button" aria-label="Previous photo">←</button><button class="gallery-arrow gallery-arrow-next" type="button" aria-label="Next photo">→</button><span class="gallery-counter">1 / ${product.images.length}</span></div></div><div class="product-information"><p class="product-name">${product.name}</p><p class="product-price">${formatPrice(product.price)}</p><p class="product-craftsmanship">${craftsmanshipNote}</p><form class="add-to-cart-form" data-product-id="${productId}"><label for="ring-size">Size</label><select id="ring-size" name="size" required>${ringSizes.map(([fr, us]) => `<option value="${fr}" data-us-size="${us}">FR ${fr} — US ${us}</option>`).join("")}</select><label for="ring-quantity">Quantity</label><select id="ring-quantity" name="quantity" required>${[1, 2, 3, 4, 5].map((quantity) => `<option value="${quantity}">${quantity}</option>`).join("")}</select><button class="add-to-cart-button" type="submit">ADD TO KART</button><p class="add-to-cart-confirmation" aria-live="polite"></p></form><p class="size-note">French and US size equivalents are indicative.</p></div>`;
 
         let activeImage = 0;
         const mainImage = productDetail.querySelector(".product-main-image");
