@@ -209,6 +209,23 @@ nav a:hover::after {
     transform: translateY(0);
 }
 
+@media (hover: hover) and (pointer: fine) {
+    .collection-menu::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 0;
+        width: 145px;
+        height: 18px;
+    }
+
+    .collection-menu:hover .collection-submenu {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+}
+
 .collection-submenu a {
     color: #f2f2f2;
     font-size: 12px;
