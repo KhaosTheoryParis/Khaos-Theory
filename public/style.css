@@ -461,17 +461,46 @@ nav a:hover::after {
 ========================= */
 
 .scroll {
-    position: absolute;
+    position: static;
 
-    bottom: 35px;
+    margin-top: 34px;
 
-    font-size: 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    font-size: 12px;
 
     letter-spacing: 0.3em;
 
     color: #777;
 
     text-transform: uppercase;
+}
+
+.scroll::after {
+    content: "";
+
+    width: 8px;
+    height: 8px;
+    margin-top: 10px;
+
+    border-right: 1px solid currentColor;
+    border-bottom: 1px solid currentColor;
+
+    animation: scroll-cue 1.5s ease-in-out infinite;
+}
+
+@keyframes scroll-cue {
+    0%, 100% {
+        opacity: 0.35;
+        transform: translateY(0) rotate(45deg);
+    }
+
+    50% {
+        opacity: 1;
+        transform: translateY(6px) rotate(45deg);
+    }
 }
 
 
