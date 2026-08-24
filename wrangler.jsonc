@@ -10,5 +10,14 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "khaos-theory-orders",
+      "database_id": "f5255369-f75f-4c50-8ba8-3a3550b3e3c8",
+      "preview_database_id": "khaos-theory-orders-local",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

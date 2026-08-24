@@ -13,7 +13,7 @@ const catalog = {
 } as const;
 
 type CatalogId = keyof typeof catalog;
-type CartItem = { id?: unknown; size?: unknown; quantity?: unknown };
+type CartItem = { productId?: unknown; size?: unknown; quantity?: unknown };
 
 export async function POST(request: Request) {
   const { env } = getCloudflareContext();
@@ -38,13 +38,14 @@ export async function POST(request: Request) {
     billing_address_collection: "required",
     "name_collection[individual][enabled]": "true",
     "name_collection[individual][optional]": "false",
+    "metadata[schema_version]": "1",
     success_url: `${env.SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.SITE_URL}/checkout.html`,
   });
 
   for (const [index, item] of body.items.entries()) {
-    const id = typeof item.id === "string" ? item.id : "";
-    const product = catalog[id as CatalogId];
+    const productId = typeof item.productId === "string" ? item.productId : "";
+    const product = catalog[productId as CatalogId];
     const quantity = Number(item.quantity);
     const size = Number(item.size);
 
@@ -52,12 +53,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "One or more kart items are invalid." }, { status: 400 });
     }
 
+    const orderLineId = crypto.randomUUID();
+    const lineMetadata = {
+      catalog_id: productId,
+      order_line_id: orderLineId,
+      size_fr: String(size),
+      pennylane_vat_rate: "exempt",
+      schema_version: "1",
+    };
+
     parameters.set(`line_items[${index}][price_data][currency]`, "eur");
     parameters.set(`line_items[${index}][price_data][product_data][name]`, `${product.name} — FR ${size}`);
-    parameters.set(
-      `line_items[${index}][price_data][product_data][metadata][pennylane_vat_rate]`,
-      "exempt",
-    );
+
+    for (const [metadataKey, metadataValue] of Object.entries(lineMetadata)) {
+      parameters.set(
+        `line_items[${index}][price_data][product_data][metadata][${metadataKey}]`,
+        metadataValue,
+      );
+      parameters.set(
+        `line_items[${index}][metadata][${metadataKey}]`,
+        metadataValue,
+      );
+    }
+
     parameters.set(`line_items[${index}][price_data][unit_amount]`, String(product.amount));
     parameters.set(`line_items[${index}][quantity]`, String(quantity));
   }

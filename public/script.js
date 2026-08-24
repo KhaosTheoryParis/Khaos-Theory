@@ -125,16 +125,21 @@ document.addEventListener("submit", (event) => {
     const form = event.target.closest(".add-to-cart-form");
     if (!form) return;
     event.preventDefault();
-    const product = products[form.dataset.productId];
+    const productId = form.dataset.productId;
+    const product = products[productId];
     const size = form.elements.size.value;
     const usSize = form.elements.size.selectedOptions[0].dataset.usSize;
     const quantity = Number(form.elements.quantity.value);
-    const key = `${form.dataset.productId}-${size}`;
+    const key = `${productId}-${size}`;
     const cart = readCart();
     const existingItem = cart.find((item) => item.key === key);
 
-    if (existingItem) existingItem.quantity += quantity;
-    else cart.push({ key, name: product.name, price: product.price, size, usSize, quantity });
+    if (existingItem) {
+        existingItem.productId = productId;
+        existingItem.quantity += quantity;
+    } else {
+        cart.push({ key, productId, name: product.name, price: product.price, size, usSize, quantity });
+    }
 
     saveCart(cart);
     renderCart();
@@ -166,7 +171,7 @@ if (checkoutSummary) {
                 const response = await fetch("/api/create-checkout-session", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ items: cart.map((item) => ({ id: item.key.split("-").slice(0, -1).join("-"), size: item.size, quantity: item.quantity })) })
+                    body: JSON.stringify({ items: cart.map((item) => ({ productId: item.productId, size: item.size, quantity: item.quantity })) })
                 });
                 const session = await response.json();
 
