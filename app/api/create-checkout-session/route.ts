@@ -35,6 +35,9 @@ export async function POST(request: Request) {
 
   const parameters = new URLSearchParams({
     mode: "payment",
+    billing_address_collection: "required",
+    "name_collection[individual][enabled]": "true",
+    "name_collection[individual][optional]": "false",
     success_url: `${env.SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.SITE_URL}/checkout.html`,
   });
@@ -51,6 +54,10 @@ export async function POST(request: Request) {
 
     parameters.set(`line_items[${index}][price_data][currency]`, "eur");
     parameters.set(`line_items[${index}][price_data][product_data][name]`, `${product.name} — FR ${size}`);
+    parameters.set(
+      `line_items[${index}][price_data][product_data][metadata][pennylane_vat_rate]`,
+      "exempt",
+    );
     parameters.set(`line_items[${index}][price_data][unit_amount]`, String(product.amount));
     parameters.set(`line_items[${index}][quantity]`, String(quantity));
   }

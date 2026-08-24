@@ -1,11 +1,164 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import {
+  getPennylaneErrorDetails,
+  syncPaidCheckoutSessionToPennylane,
+  syncTotalRefundToPennylane,
+} from "../../../services/pennylane";
 
 export const runtime = "nodejs";
 
+async function createPennylaneInvoice(
+  stripe: Stripe,
+  sessionId: string,
+  token: string | undefined,
+) {
+  if (!token) {
+    console.error("PENNYLANE_INVOICE_ERROR", {
+      stripe_session_id: sessionId,
+      code: "MISSING_PENNYLANE_API_TOKEN",
+    });
+    return;
+  }
+
+  try {
+    const result = await syncPaidCheckoutSessionToPennylane({ stripe, sessionId, token });
+
+    if (result.status === "already_exists") {
+      console.log("PENNYLANE_INVOICE_ALREADY_EXISTS", {
+        stripe_session_id: sessionId,
+        pennylane_invoice_id: result.invoiceId,
+        stripe_payment_intent_id: result.paymentIntentId,
+      });
+    } else {
+      console.log("PENNYLANE_INVOICE_FINALIZED", {
+        stripe_session_id: sessionId,
+        pennylane_invoice_id: result.invoiceId,
+        stripe_payment_intent_id: result.paymentIntentId,
+        customer_email: result.customerEmail,
+        amount: result.amount,
+        currency: result.currency,
+      });
+    }
+
+    if (result.markAsPaid.status === "marked_paid") {
+      console.log("PENNYLANE_SANDBOX_INVOICE_MARKED_PAID", {
+        pennylane_invoice_id: result.invoiceId,
+        stripe_session_id: sessionId,
+        stripe_payment_intent_id: result.paymentIntentId,
+        amount: result.amount,
+        currency: result.currency,
+        remaining_amount_with_tax: result.markAsPaid.remainingAmountWithTax ?? null,
+      });
+    } else if (result.markAsPaid.status === "error") {
+      console.error("PENNYLANE_MARK_AS_PAID_ERROR", {
+        pennylane_invoice_id: result.invoiceId,
+        stripe_session_id: sessionId,
+        stripe_payment_intent_id: result.paymentIntentId,
+        ...result.markAsPaid.error,
+      });
+    }
+
+    if (result.email.status === "sent" && result.status === "created") {
+      console.log("PENNYLANE_SANDBOX_INVOICE_EMAIL_SENT", {
+        pennylane_invoice_id: result.invoiceId,
+        stripe_session_id: sessionId,
+        customer_email: result.customerEmail,
+      });
+    } else if (result.email.status === "error") {
+      console.error("PENNYLANE_INVOICE_EMAIL_ERROR", {
+        pennylane_invoice_id: result.invoiceId,
+        stripe_session_id: sessionId,
+        ...result.email.error,
+      });
+    }
+  } catch (error) {
+    console.error("PENNYLANE_INVOICE_ERROR", {
+      stripe_session_id: sessionId,
+      ...getPennylaneErrorDetails(error),
+    });
+  }
+}
+
+async function createPennylaneCreditNote(
+  stripe: Stripe,
+  charge: Stripe.Charge,
+  eventCreated: number,
+  token: string | undefined,
+) {
+  const paymentIntentId =
+    typeof charge.payment_intent === "string"
+      ? charge.payment_intent
+      : charge.payment_intent?.id;
+
+  if (!token) {
+    console.error("PENNYLANE_CREDIT_NOTE_ERROR", {
+      stripe_charge_id: charge.id,
+      stripe_payment_intent_id: paymentIntentId ?? null,
+      code: "MISSING_PENNYLANE_API_TOKEN",
+    });
+    return;
+  }
+
+  try {
+    const result = await syncTotalRefundToPennylane({
+      stripe,
+      charge,
+      eventCreated,
+      token,
+    });
+    const logDetails = {
+      stripe_charge_id: charge.id,
+      stripe_payment_intent_id: result.paymentIntentId,
+      pennylane_invoice_id: result.invoiceId,
+      pennylane_credit_note_id: result.creditNoteId,
+      amount: result.amount,
+      currency: result.currency,
+    };
+
+    if (result.status === "already_exists") {
+      console.log("PENNYLANE_CREDIT_NOTE_ALREADY_EXISTS", logDetails);
+    } else {
+      console.log("PENNYLANE_CREDIT_NOTE_FINALIZED", logDetails);
+    }
+
+    if (result.email.status === "sent" && result.status === "created") {
+      console.log("PENNYLANE_SANDBOX_CREDIT_NOTE_EMAIL_SENT", {
+        pennylane_credit_note_id: result.creditNoteId,
+        pennylane_invoice_id: result.invoiceId,
+        stripe_charge_id: charge.id,
+        stripe_payment_intent_id: result.paymentIntentId,
+        customer_email: result.customerEmail,
+      });
+    } else if (result.email.status === "error") {
+      const emailError = result.email.error;
+
+      console.error("PENNYLANE_CREDIT_NOTE_EMAIL_ERROR", {
+        pennylane_credit_note_id: result.creditNoteId,
+        pennylane_invoice_id: result.invoiceId,
+        stripe_charge_id: charge.id,
+        stripe_payment_intent_id: result.paymentIntentId,
+        operation: emailError.operation ?? "send_credit_note_by_email",
+        http_status: emailError.http_status,
+        request_id: emailError.request_id,
+        error_body: emailError.error_body,
+        error_message:
+          emailError.error_message ?? (emailError.error_body ? undefined : emailError.code),
+      });
+    }
+  } catch (error) {
+    console.error("PENNYLANE_CREDIT_NOTE_ERROR", {
+      stripe_charge_id: charge.id,
+      stripe_payment_intent_id: paymentIntentId ?? null,
+      ...getPennylaneErrorDetails(error),
+    });
+  }
+}
+
 export async function POST(req: Request) {
   const { env } = getCloudflareContext();
+  const pennylaneToken = (env as typeof env & { PENNYLANE_API_TOKEN?: string }).PENNYLANE_API_TOKEN;
   const signature = req.headers.get("stripe-signature");
   const payload = await req.text();
 
@@ -43,6 +196,8 @@ export async function POST(req: Request) {
           currency: session.currency,
           customer_email: session.customer_details?.email ?? session.customer_email ?? null,
         });
+
+        await createPennylaneInvoice(stripe, session.id, pennylaneToken);
       } else {
         console.log("CHECKOUT_COMPLETED_NOT_PAID", {
           session_id: session.id,
@@ -83,6 +238,18 @@ export async function POST(req: Request) {
         amount_refunded: charge.amount_refunded,
         currency: charge.currency,
       });
+
+      if (charge.amount_refunded !== charge.amount) {
+        console.log("REFUND_PARTIAL_NOT_SUPPORTED", {
+          stripe_charge_id: charge.id,
+          amount: charge.amount,
+          amount_refunded: charge.amount_refunded,
+          currency: charge.currency,
+        });
+        break;
+      }
+
+      await createPennylaneCreditNote(stripe, charge, event.created, pennylaneToken);
       break;
     }
 
