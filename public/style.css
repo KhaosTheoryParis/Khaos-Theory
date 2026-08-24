@@ -444,7 +444,7 @@ nav a:hover::after {
 ========================= */
 
 .tagline {
-    font-size: 24px;
+    font-size: 25.5px;
 
     letter-spacing: 0.35em;
 
@@ -1168,7 +1168,7 @@ footer a:focus-visible {
         width: 260px;
         max-width: 75vw;
 
-        font-size: min(4.9vw, 17px);
+        font-size: min(4.27vw, 14.8px);
         white-space: nowrap;
     }
 
