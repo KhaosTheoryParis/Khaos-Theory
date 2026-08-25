@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { verifyCloudflareAccess } from "../../../services/cloudflare-access";
 import type { OrdersDatabase } from "../../../services/orders";
 import {
   finalizeRefundOperation,
@@ -28,29 +29,6 @@ class RefundRouteError extends Error {
     this.status = status;
     this.code = code;
   }
-}
-
-function isStrictLocalSandbox(request: Request, stripeSecretKey: string | undefined) {
-  const isLoopbackHost = (value: string | null) => {
-    if (!value) return false;
-
-    const normalized = value.trim().toLowerCase();
-    const hostname = normalized.startsWith("[")
-      ? normalized.slice(1, normalized.indexOf("]"))
-      : normalized.split(":")[0];
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-  };
-  const urlIsLoopback = isLoopbackHost(new URL(request.url).hostname);
-  const hostIsLoopback = isLoopbackHost(request.headers.get("host"));
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0] ?? null;
-  const forwardedHostIsSafe = forwardedHost === null || isLoopbackHost(forwardedHost);
-
-  return (
-    urlIsLoopback &&
-    hostIsLoopback &&
-    forwardedHostIsSafe &&
-    stripeSecretKey?.startsWith("sk_test_") === true
-  );
 }
 
 function requirePaymentIntentId(value: string | Stripe.PaymentIntent | null) {
@@ -258,12 +236,38 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ ok: false, error: "REFUND_REQUEST_FAILED" }, { status: 500 });
 }
 
+async function methodNotAllowed(request: Request) {
+  const access = await verifyCloudflareAccess(request.headers);
+
+  if (!access.ok) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
+
+  return NextResponse.json(
+    { ok: false, error: "METHOD_NOT_ALLOWED" },
+    { status: 405, headers: { Allow: "POST" } },
+  );
+}
+
+export const GET = methodNotAllowed;
+export const PUT = methodNotAllowed;
+export const PATCH = methodNotAllowed;
+export const DELETE = methodNotAllowed;
+export const OPTIONS = methodNotAllowed;
+export const HEAD = methodNotAllowed;
+
 export async function POST(request: Request) {
+  const access = await verifyCloudflareAccess(request.headers);
+
+  if (!access.ok) {
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
+
   const { env } = getCloudflareContext();
   const runtimeEnv = env as typeof env & { DB?: OrdersDatabase };
 
-  if (!isStrictLocalSandbox(request, env.STRIPE_SECRET_KEY)) {
-    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  if (!env.STRIPE_SECRET_KEY?.startsWith("sk_test_")) {
+    return NextResponse.json({ ok: false, error: "REFUNDS_SANDBOX_ONLY" }, { status: 403 });
   }
   if (!runtimeEnv.DB) {
     return NextResponse.json({ ok: false, error: "MISSING_D1_DB_BINDING" }, { status: 503 });

@@ -1067,6 +1067,33 @@ footer a:focus-visible {
 
 /* CHECKOUT */
 
+.checkout-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+
+    color: #f2f2f2;
+    border: 1px solid #555;
+    padding: 10px 14px;
+
+    font-size: 14px;
+    letter-spacing: 0.18em;
+    text-decoration: none;
+    transition: color 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+}
+
+.checkout-back-link span {
+    font-size: 22px;
+    line-height: 0.7;
+}
+
+.checkout-back-link:hover,
+.checkout-back-link:focus-visible {
+    color: #050505;
+    background: white;
+    border-color: white;
+}
+
 .checkout-summary {
     width: min(760px, 100%);
     margin: 0 auto;
@@ -1096,11 +1123,74 @@ footer a:focus-visible {
     display: block;
 }
 
-.checkout-line > div span {
+.checkout-line-details > span {
     margin-top: 7px;
 
     color: #999;
     font-size: 14px;
+}
+
+.checkout-line-details {
+    min-width: 0;
+}
+
+.checkout-line-price {
+    flex: 0 0 auto;
+}
+
+.checkout-line-actions {
+    flex: 0 0 auto;
+
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.checkout-quantity {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 10px;
+    border: 1px solid #333;
+}
+
+.checkout-quantity button,
+.checkout-quantity span {
+    width: 28px;
+    height: 26px;
+    margin: 0;
+
+    display: grid;
+    place-items: center;
+
+    color: white;
+    background: transparent;
+    border: 0;
+
+    font: inherit;
+    font-size: 15px;
+    line-height: 1;
+}
+
+.checkout-quantity span {
+    border-right: 1px solid #333;
+    border-left: 1px solid #333;
+    color: #f2f2f2;
+}
+
+.checkout-quantity button {
+    cursor: pointer;
+    transition: color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+}
+
+.checkout-quantity button:hover,
+.checkout-quantity button:focus-visible {
+    color: #050505;
+    background: white;
+}
+
+.checkout-quantity button:disabled {
+    cursor: not-allowed;
+    opacity: 0.3;
 }
 
 .checkout-total {
@@ -1174,6 +1264,31 @@ footer a:focus-visible {
 ========================= */
 
 @media (max-width: 700px) {
+
+    .checkout-header {
+        height: 82px;
+        padding: 18px 22px;
+
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .checkout-back-link {
+        gap: 7px;
+        padding: 8px 10px;
+
+        font-size: 10px;
+        letter-spacing: 0.12em;
+    }
+
+    .checkout-back-link span {
+        font-size: 17px;
+    }
+
+    .checkout-line,
+    .checkout-total {
+        gap: 15px;
+    }
 
     #rings .section-title,
     #collection .section-title,

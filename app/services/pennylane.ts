@@ -112,6 +112,7 @@ export type PennylanePartialCreditNoteResult = {
   creditNoteId: number | string;
   amount: number;
   currency: string;
+  email: PennylaneEmailResult;
 };
 
 type PennylaneMarkAsPaidResult =
@@ -950,6 +951,62 @@ async function sendSandboxCreditNoteByEmail(
   }
 }
 
+async function sendSandboxPartialCreditNoteByEmail(
+  environment: PennylaneEnvironment,
+  creditNoteId: number | string,
+  invoiceId: number | string,
+  externalReference: string,
+  customerId: number | string,
+  expectedAmount: number,
+  currency: string,
+  customerEmail: string,
+): Promise<PennylaneEmailResult> {
+  // Independent runtime guard immediately before every read and the email mutation.
+  if (!environment.isSandbox) {
+    return { status: "skipped_non_sandbox" };
+  }
+
+  try {
+    const [invoice, creditNote] = await Promise.all([
+      retrieveInvoice(environment.token, invoiceId),
+      retrieveInvoice(environment.token, creditNoteId),
+    ]);
+    const creditNoteAmount = creditNote.currency_amount
+      ? parseEuroAmountToCents(creditNote.currency_amount)
+      : null;
+    const isFinalizedCreditNote =
+      creditNote.draft === false &&
+      (creditNote.status === "credit_note" || creditNote.status === "cancelled");
+    const invoiceCustomerId = invoice.customer?.id;
+    const creditNoteCustomerId = creditNote.customer?.id;
+
+    if (
+      !isFinalizedCreditNote ||
+      creditNote.external_reference !== externalReference ||
+      String(creditNote.credited_invoice?.id) !== String(invoiceId) ||
+      String(invoiceCustomerId) !== String(customerId) ||
+      String(creditNoteCustomerId) !== String(customerId) ||
+      creditNoteAmount !== -expectedAmount ||
+      creditNote.currency !== currency.toUpperCase()
+    ) {
+      throw new PennylaneSyncError({
+        code: "PENNYLANE_PARTIAL_CREDIT_NOTE_EMAIL_VERIFICATION_FAILED",
+        operation: "send_credit_note_by_email",
+        invoice_id: creditNoteId,
+      });
+    }
+
+    return sendPennylaneDocumentByEmail(
+      environment,
+      creditNoteId,
+      customerEmail,
+      "send_credit_note_by_email",
+    );
+  } catch (error) {
+    return { status: "error", error: getPennylaneErrorDetails(error) };
+  }
+}
+
 function requireStripePaymentIntentId(
   paymentIntent: string | Stripe.PaymentIntent | null,
 ) {
@@ -1444,6 +1501,7 @@ export async function syncPartialRefundToPennylane({
   refundAmount,
   invoiceAmountTotal,
   currency,
+  customerEmail,
 }: {
   token: string;
   refundId: string;
@@ -1457,6 +1515,7 @@ export async function syncPartialRefundToPennylane({
   refundAmount: number;
   invoiceAmountTotal: number;
   currency: string;
+  customerEmail: string;
 }): Promise<PennylanePartialCreditNoteResult> {
   const environment = await inspectPennylaneEnvironment(token);
 
@@ -1555,6 +1614,7 @@ export async function syncPartialRefundToPennylane({
       creditNoteId: await verifyExistingCreditNote(existingCreditNote),
       amount: refundAmount,
       currency,
+      email: { status: "skipped_existing_invoice" },
     };
   }
 
@@ -1598,6 +1658,16 @@ export async function syncPartialRefundToPennylane({
       customerId,
     );
     await verifyPartialCreditNoteLine(token, creditNoteId, sourceLine, quantity, unitAmount);
+    const email = await sendSandboxPartialCreditNoteByEmail(
+      environment,
+      creditNoteId,
+      expectedInvoiceId,
+      externalReference,
+      customerId,
+      refundAmount,
+      currency,
+      customerEmail,
+    );
 
     return {
       status: "created",
@@ -1605,6 +1675,7 @@ export async function syncPartialRefundToPennylane({
       creditNoteId,
       amount: refundAmount,
       currency,
+      email,
     };
   } catch (error) {
     const concurrentCreditNote = await findCreditNote(token, externalReference);
@@ -1616,6 +1687,7 @@ export async function syncPartialRefundToPennylane({
       creditNoteId: await verifyExistingCreditNote(concurrentCreditNote),
       amount: refundAmount,
       currency,
+      email: { status: "skipped_existing_invoice" },
     };
   }
 }

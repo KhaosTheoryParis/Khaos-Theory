@@ -1,3 +1,4 @@
 STRIPE_SECRET_KEY=sk_test_replace_me
 STRIPE_WEBHOOK_SECRET=whsec_replace_me
 SITE_URL=http://localhost:8787
+CLOUDFLARE_ACCESS_AUD=

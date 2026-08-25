@@ -153,34 +153,58 @@ renderCart();
 const checkoutSummary = document.querySelector("#checkout-summary");
 
 if (checkoutSummary) {
-    const cart = readCart();
-    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const renderCheckout = () => {
+        const cart = readCart();
+        const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-    if (!cart.length) {
-        checkoutSummary.innerHTML = `<div class="section-title">My Kart</div><p class="checkout-empty">Your kart is empty.</p><a class="continue-shopping" href="rings.html">CONTINUE SHOPPING</a>`;
-    } else {
-        checkoutSummary.innerHTML = `<div class="section-title">Order summary</div><div class="checkout-lines">${cart.map((item) => `<div class="checkout-line"><div><strong>${item.name}</strong><span>FR ${item.size} / US ${item.usSize} · Quantity ${item.quantity}</span></div><span>${formatPrice(item.price * item.quantity)}</span></div>`).join("")}</div><div class="checkout-total"><span>TOTAL</span><strong>${formatPrice(total)}</strong></div><button class="stripe-checkout-button" type="button">PAY WITH STRIPE</button><p class="checkout-status" aria-live="polite"></p>`;
+        if (!cart.length) {
+            checkoutSummary.innerHTML = `<div class="section-title">My Kart</div><p class="checkout-empty">Your kart is empty.</p><a class="continue-shopping" href="rings.html">CONTINUE SHOPPING</a>`;
+            return;
+        }
 
-        checkoutSummary.querySelector(".stripe-checkout-button").addEventListener("click", async (event) => {
-            const button = event.currentTarget;
-            const status = checkoutSummary.querySelector(".checkout-status");
-            button.disabled = true;
-            status.textContent = "Redirecting to secure payment…";
+        checkoutSummary.innerHTML = `<div class="section-title">Order summary</div><div class="checkout-lines">${cart.map((item) => `<div class="checkout-line"><div class="checkout-line-details"><strong>${item.name}</strong><span>FR ${item.size} / US ${item.usSize}</span></div><div class="checkout-line-actions"><span class="checkout-line-price">${formatPrice(item.price * item.quantity)}</span><div class="checkout-quantity" aria-label="Quantity for ${item.name}"><button type="button" data-checkout-action="decrease" data-cart-key="${item.key}" aria-label="Remove one ${item.name}">−</button><span aria-live="polite">${item.quantity}</span><button type="button" data-checkout-action="increase" data-cart-key="${item.key}" aria-label="Add one ${item.name}"${item.quantity >= 5 ? " disabled" : ""}>+</button></div></div></div>`).join("")}</div><div class="checkout-total"><span>TOTAL</span><strong>${formatPrice(total)}</strong></div><button class="stripe-checkout-button" type="button">KONFIRM &amp; PAY</button><p class="checkout-status" aria-live="polite"></p>`;
+    };
 
-            try {
-                const response = await fetch("/api/create-checkout-session", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ items: cart.map((item) => ({ productId: item.productId, size: item.size, quantity: item.quantity })) })
-                });
-                const session = await response.json();
+    checkoutSummary.addEventListener("click", async (event) => {
+        const quantityButton = event.target.closest("[data-checkout-action]");
 
-                if (!response.ok || !session.url) throw new Error(session.error || "Unable to start payment.");
-                window.location.href = session.url;
-            } catch (error) {
-                button.disabled = false;
-                status.textContent = error.message;
-            }
-        });
-    }
+        if (quantityButton) {
+            const cart = readCart();
+            const item = cart.find((cartItem) => cartItem.key === quantityButton.dataset.cartKey);
+            if (!item) return;
+
+            if (quantityButton.dataset.checkoutAction === "increase" && item.quantity < 5) item.quantity += 1;
+            if (quantityButton.dataset.checkoutAction === "decrease") item.quantity -= 1;
+
+            saveCart(cart.filter((cartItem) => cartItem.quantity > 0));
+            renderCart();
+            renderCheckout();
+            return;
+        }
+
+        const button = event.target.closest(".stripe-checkout-button");
+        if (!button) return;
+
+        const cart = readCart();
+        const status = checkoutSummary.querySelector(".checkout-status");
+        button.disabled = true;
+        status.textContent = "Redirecting to secure payment…";
+
+        try {
+            const response = await fetch("/api/create-checkout-session", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ items: cart.map((item) => ({ productId: item.productId, size: item.size, quantity: item.quantity })) })
+            });
+            const session = await response.json();
+
+            if (!response.ok || !session.url) throw new Error(session.error || "Unable to start payment.");
+            window.location.href = session.url;
+        } catch (error) {
+            button.disabled = false;
+            status.textContent = error.message;
+        }
+    });
+
+    renderCheckout();
 }

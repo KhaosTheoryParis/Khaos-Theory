@@ -409,6 +409,7 @@ async function processStructuredRefundCreated({
       refundAmount: refund.amount,
       invoiceAmountTotal: context.amountTotal,
       currency: context.currency,
+      customerEmail: context.customerEmail,
     });
 
     await recordPennylaneCreditNote(db, operation, String(result.creditNoteId));
@@ -430,6 +431,31 @@ async function processStructuredRefundCreated({
         : "PENNYLANE_PARTIAL_CREDIT_NOTE_ALREADY_EXISTS",
       details,
     );
+
+    if (result.status === "created" && result.email.status === "sent") {
+      console.log("PENNYLANE_SANDBOX_PARTIAL_CREDIT_NOTE_EMAIL_SENT", {
+        pennylane_credit_note_id: result.creditNoteId,
+        pennylane_invoice_id: result.invoiceId,
+        stripe_refund_id: refund.id,
+        refund_operation_id: operation.id,
+        customer_email: context.customerEmail,
+      });
+    } else if (result.status === "created" && result.email.status === "error") {
+      const emailError = result.email.error;
+
+      console.error("PENNYLANE_PARTIAL_CREDIT_NOTE_EMAIL_ERROR", {
+        pennylane_credit_note_id: result.creditNoteId,
+        pennylane_invoice_id: result.invoiceId,
+        stripe_refund_id: refund.id,
+        refund_operation_id: operation.id,
+        operation: emailError.operation ?? "send_credit_note_by_email",
+        http_status: emailError.http_status,
+        request_id: emailError.request_id,
+        error_body: emailError.error_body,
+        error_message:
+          emailError.error_message ?? (emailError.error_body ? undefined : emailError.code),
+      });
+    }
   } catch (error) {
     console.error("PENNYLANE_PARTIAL_CREDIT_NOTE_ERROR", {
       stripe_refund_id: eventRefund.id,

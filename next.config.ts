@@ -5,6 +5,9 @@ initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    authInterrupts: true,
+  },
 };
 
 export default nextConfig;
