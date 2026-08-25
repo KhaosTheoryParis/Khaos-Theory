@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { unauthorized } from "next/navigation";
 import { verifyCloudflareAccess } from "../services/cloudflare-access";
+import styles from "./admin.module.css";
+import RefundForm from "./refund-form";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,19 +19,13 @@ export default async function AdminPage() {
   if (!access.ok) unauthorized();
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        background: "#050505",
-        color: "#f2f2f2",
-        fontFamily: "Arial, sans-serif",
-      }}
-    >
-      <section style={{ textAlign: "center" }}>
-        <h1>Khaos Theory Admin</h1>
-        <p>Authenticated</p>
+    <main className={styles.main}>
+      <section className={styles.panel}>
+        <header className={styles.header}>
+          <h1>Khaos Theory Admin</h1>
+          <p>Authenticated</p>
+        </header>
+        <RefundForm />
       </section>
     </main>
   );

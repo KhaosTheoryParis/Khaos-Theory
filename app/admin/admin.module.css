@@ -1,0 +1,234 @@
+.main {
+  min-height: 100vh;
+  padding: 64px 24px;
+  display: flex;
+  justify-content: center;
+  background: #050505;
+  color: #f2f2f2;
+  font-family: Arial, sans-serif;
+}
+
+.panel {
+  width: min(560px, 100%);
+}
+
+.header {
+  margin-bottom: 48px;
+}
+
+.header h1,
+.refundSection h2 {
+  margin: 0;
+  font-weight: 500;
+}
+
+.header p,
+.sandboxNotice {
+  color: #999;
+}
+
+.refundSection {
+  padding-top: 32px;
+  border-top: 1px solid #333;
+}
+
+.sandboxNotice {
+  margin: 8px 0 28px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.form {
+  display: grid;
+  gap: 10px;
+}
+
+.form + .form,
+.orderResult + .form {
+  margin-top: 34px;
+  padding-top: 28px;
+  border-top: 1px solid #333;
+}
+
+.form h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.form label {
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.form input {
+  width: 100%;
+  padding: 13px 14px;
+  color: #f2f2f2;
+  background: #111;
+  border: 1px solid #444;
+  font: inherit;
+}
+
+.form button,
+.confirmButton {
+  min-height: 48px;
+  margin-top: 18px;
+  padding: 12px 18px;
+  color: #050505;
+  background: #f2f2f2;
+  border: 1px solid #f2f2f2;
+  font: inherit;
+  cursor: pointer;
+}
+
+.form button:disabled,
+.confirmButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.orderResult {
+  margin-top: 38px;
+}
+
+.orderResult > h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.orderResult > p,
+.amountHelp {
+  margin: 7px 0 20px;
+  color: #999;
+  font-size: 13px;
+}
+
+.orderLines {
+  display: grid;
+  gap: 14px;
+}
+
+.lineCard {
+  padding: 18px;
+  background: #0d0d0d;
+  border: 1px solid #333;
+}
+
+.selectedLine {
+  border-color: #f2f2f2;
+}
+
+.lineCard h4,
+.lineCard p {
+  margin: 0;
+}
+
+.lineCard h4 {
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.lineCard > div > p {
+  margin-top: 4px;
+  color: #999;
+  font-size: 13px;
+}
+
+.lineCard dl {
+  margin: 15px 0;
+}
+
+.lineCard dl div {
+  padding: 4px 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  font-size: 14px;
+}
+
+.lineCard dt {
+  color: #999;
+}
+
+.lineCard dd {
+  margin: 0;
+}
+
+.lineCard button {
+  width: 100%;
+  min-height: 40px;
+  color: #f2f2f2;
+  background: transparent;
+  border: 1px solid #555;
+  font: inherit;
+  cursor: pointer;
+}
+
+.lineCard button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.review {
+  margin-top: 30px;
+  padding: 22px;
+  background: #101010;
+  border: 1px solid #333;
+}
+
+.review dl {
+  margin: 0;
+}
+
+.review dl div {
+  padding: 8px 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.review dt {
+  color: #999;
+}
+
+.review dd {
+  margin: 0;
+  text-align: right;
+}
+
+.confirmation {
+  margin-top: 22px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.4;
+}
+
+.confirmation input {
+  margin-top: 3px;
+}
+
+.confirmButton {
+  width: 100%;
+}
+
+.success,
+.error {
+  margin-top: 22px;
+  padding: 14px;
+  border: 1px solid;
+}
+
+.success {
+  color: #b7e4c7;
+  border-color: #2d6a4f;
+}
+
+.error {
+  color: #ffb3b3;
+  border-color: #8d2b2b;
+}

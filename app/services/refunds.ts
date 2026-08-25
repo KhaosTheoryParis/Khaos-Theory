@@ -35,6 +35,25 @@ export type RefundOperation = {
   creditNoteStatus: "pending" | "finalized";
 };
 
+export type RefundOrderSearchResult = {
+  id: string;
+  stripeCheckoutSessionId: string;
+  stripePaymentIntentId: string;
+  amountTotal: number;
+  currency: string;
+  status: string;
+  schemaVersion: number;
+  lines: Array<{
+    orderLineId: string;
+    catalogId: string;
+    sizeFr: number;
+    quantity: number;
+    unitAmount: number;
+    refundedQuantity: number;
+    reservedRefundQuantity: number;
+  }>;
+};
+
 type RefundContextRow = {
   order_id: string;
   order_line_id: string;
@@ -70,6 +89,26 @@ type RefundOperationRow = {
   credit_note_status: "pending" | "finalized";
 };
 
+type RefundOrderSearchRow = {
+  id: string;
+  stripe_checkout_session_id: string;
+  stripe_payment_intent_id: string;
+  amount_total: number;
+  currency: string;
+  status: string;
+  schema_version: number;
+};
+
+type RefundOrderLineSearchRow = {
+  order_line_id: string;
+  catalog_id: string;
+  size_fr: number;
+  quantity: number;
+  unit_amount: number;
+  refunded_quantity: number;
+  reserved_refund_quantity: number;
+};
+
 type RefundPersistenceErrorDetails = {
   code: string;
 };
@@ -97,6 +136,70 @@ function mapOperation(row: RefundOperationRow): RefundOperation {
     status: row.status,
     pennylaneCreditNoteId: row.pennylane_credit_note_id,
     creditNoteStatus: row.credit_note_status,
+  };
+}
+
+export async function findRefundOrderByReference(
+  db: OrdersDatabase,
+  reference: string,
+): Promise<RefundOrderSearchResult | null> {
+  const result = await db
+    .prepare(
+      `SELECT
+        id, stripe_checkout_session_id, stripe_payment_intent_id,
+        amount_total, currency, status, schema_version
+      FROM orders
+      WHERE id = ?1
+         OR stripe_payment_intent_id = ?1
+         OR stripe_checkout_session_id = ?1`,
+    )
+    .bind(reference)
+    .all<RefundOrderSearchRow>();
+
+  if (!result.success) {
+    throw new RefundPersistenceError("ORDER_LOOKUP_FAILED");
+  }
+  if (result.results.length > 1) {
+    throw new RefundPersistenceError("ORDER_REFERENCE_CONFLICT");
+  }
+
+  const order = result.results[0];
+
+  if (!order) return null;
+
+  const lines = await db
+    .prepare(
+      `SELECT
+        order_line_id, catalog_id, size_fr, quantity, unit_amount,
+        refunded_quantity, reserved_refund_quantity
+      FROM order_lines
+      WHERE order_id = ?1
+      ORDER BY created_at, id`,
+    )
+    .bind(order.id)
+    .all<RefundOrderLineSearchRow>();
+
+  if (!lines.success || lines.results.length === 0) {
+    throw new RefundPersistenceError("ORDER_LINES_LOOKUP_FAILED");
+  }
+
+  return {
+    id: order.id,
+    stripeCheckoutSessionId: order.stripe_checkout_session_id,
+    stripePaymentIntentId: order.stripe_payment_intent_id,
+    amountTotal: order.amount_total,
+    currency: order.currency,
+    status: order.status,
+    schemaVersion: order.schema_version,
+    lines: lines.results.map((line) => ({
+      orderLineId: line.order_line_id,
+      catalogId: line.catalog_id,
+      sizeFr: line.size_fr,
+      quantity: line.quantity,
+      unitAmount: line.unit_amount,
+      refundedQuantity: line.refunded_quantity,
+      reservedRefundQuantity: line.reserved_refund_quantity,
+    })),
   };
 }
 

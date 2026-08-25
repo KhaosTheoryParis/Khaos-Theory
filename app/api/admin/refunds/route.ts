@@ -6,6 +6,7 @@ import type { OrdersDatabase } from "../../../services/orders";
 import {
   finalizeRefundOperation,
   findRefundOperation,
+  findRefundOrderByReference,
   getRefundContext,
   getRefundPersistenceErrorDetails,
   reserveRefundOperation,
@@ -31,6 +32,108 @@ class RefundRouteError extends Error {
   }
 }
 
+const PRODUCTION_ADMIN_ORIGIN = "https://khaostheoryparis.com";
+const ORDER_LINE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ORDER_REFERENCE_PATTERN =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|pi_[A-Za-z0-9]+|cs_(?:test_|live_)?[A-Za-z0-9]+)$/i;
+
+const CATALOG_NAMES: Record<string, string> = {
+  geometry: "Geometry",
+  "carved-cross": "Karved Kross",
+  "hollow-cross": "Hollow Kross",
+  "signet-corner": "Signet Korner",
+  "damaged-ring-i": "Damaged Ring I",
+  "damaged-ring-ii": "Damaged Ring II",
+};
+
+type ParsedRefundRequest =
+  | { action: "search"; reference: string }
+  | { action: "preview"; orderLineId: string }
+  | { action: "refund"; orderLineId: string; amount: number };
+
+function isLoopbackHostname(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function hasTrustedAdminOrigin(request: Request, stripeSecretKey: string | undefined) {
+  const originHeader = request.headers.get("origin")?.trim();
+
+  if (!originHeader) return false;
+
+  let requestUrl: URL;
+  let originUrl: URL;
+
+  try {
+    requestUrl = new URL(request.url);
+    originUrl = new URL(originHeader);
+  } catch {
+    return false;
+  }
+
+  const fetchSite = request.headers.get("sec-fetch-site");
+
+  if (fetchSite && fetchSite !== "same-origin") return false;
+
+  if (
+    requestUrl.origin === PRODUCTION_ADMIN_ORIGIN &&
+    originUrl.origin === PRODUCTION_ADMIN_ORIGIN
+  ) {
+    return true;
+  }
+
+  return (
+    stripeSecretKey?.startsWith("sk_test_") === true &&
+    isLoopbackHostname(requestUrl.hostname) &&
+    isLoopbackHostname(originUrl.hostname) &&
+    requestUrl.origin === originUrl.origin
+  );
+}
+
+function parseRefundRequest(body: unknown): ParsedRefundRequest | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+
+  const source = body as Record<string, unknown>;
+  const action = source.action;
+  const reference = typeof source.reference === "string" ? source.reference.trim() : "";
+  const orderLineId = typeof source.order_line_id === "string" ? source.order_line_id.trim() : "";
+
+  if (
+    action === "search" &&
+    Object.keys(source).length === 2 &&
+    Object.hasOwn(source, "action") &&
+    Object.hasOwn(source, "reference") &&
+    ORDER_REFERENCE_PATTERN.test(reference)
+  ) {
+    return { action, reference };
+  }
+
+  if (!ORDER_LINE_ID_PATTERN.test(orderLineId)) return null;
+
+  if (
+    action === "preview" &&
+    Object.keys(source).length === 2 &&
+    Object.hasOwn(source, "action") &&
+    Object.hasOwn(source, "order_line_id")
+  ) {
+    return { action, orderLineId };
+  }
+
+  if (
+    action === "refund" &&
+    Object.keys(source).length === 3 &&
+    Object.hasOwn(source, "action") &&
+    Object.hasOwn(source, "amount") &&
+    Object.hasOwn(source, "order_line_id") &&
+    Number.isSafeInteger(source.amount) &&
+    (source.amount as number) > 0
+  ) {
+    return { action, orderLineId, amount: source.amount as number };
+  }
+
+  return null;
+}
+
 function requirePaymentIntentId(value: string | Stripe.PaymentIntent | null) {
   const id = typeof value === "string" ? value : value?.id;
 
@@ -51,7 +154,7 @@ function requireChargeId(value: string | Stripe.Charge | null) {
   return id;
 }
 
-function validateD1Context(context: RefundContext, requestedQuantity: number) {
+function validateRefundableContext(context: RefundContext) {
   if (context.orderStatus !== "paid") {
     throw new RefundRouteError(409, "ORDER_NOT_PAID");
   }
@@ -65,6 +168,17 @@ function validateD1Context(context: RefundContext, requestedQuantity: number) {
     throw new RefundRouteError(409, "INVALID_ORDER_LINE_UNIT_AMOUNT");
   }
   if (
+    !Number.isInteger(context.quantity) ||
+    !Number.isInteger(context.refundedQuantity) ||
+    !Number.isInteger(context.reservedRefundQuantity) ||
+    context.quantity < 1 ||
+    context.refundedQuantity < 0 ||
+    context.reservedRefundQuantity < 0 ||
+    context.refundedQuantity + context.reservedRefundQuantity > context.quantity
+  ) {
+    throw new RefundRouteError(409, "INVALID_ORDER_LINE_REFUND_STATE");
+  }
+  if (
     !context.stripeCheckoutSessionId ||
     !/^cs_(?:test_|live_)?[A-Za-z0-9]+$/.test(context.stripeCheckoutSessionId) ||
     !context.stripePaymentIntentId ||
@@ -74,12 +188,63 @@ function validateD1Context(context: RefundContext, requestedQuantity: number) {
   ) {
     throw new RefundRouteError(409, "ORDER_STRIPE_REFERENCES_INVALID");
   }
+}
+
+function validateD1Context(context: RefundContext, requestedQuantity: number) {
+  validateRefundableContext(context);
+
   if (
     !Number.isInteger(requestedQuantity) ||
     requestedQuantity < 1 ||
     context.refundedQuantity + context.reservedRefundQuantity + requestedQuantity > context.quantity
   ) {
     throw new RefundRouteError(409, "REFUND_QUANTITY_UNAVAILABLE");
+  }
+}
+
+function validateOrderSearchResult(
+  order: NonNullable<Awaited<ReturnType<typeof findRefundOrderByReference>>>,
+) {
+  if (
+    !ORDER_LINE_ID_PATTERN.test(order.id) ||
+    !/^pi_[A-Za-z0-9]+$/.test(order.stripePaymentIntentId) ||
+    !/^cs_(?:test_|live_)?[A-Za-z0-9]+$/.test(order.stripeCheckoutSessionId) ||
+    order.status !== "paid" ||
+    order.currency !== "eur" ||
+    order.schemaVersion !== 1 ||
+    !Number.isSafeInteger(order.amountTotal) ||
+    order.amountTotal <= 0
+  ) {
+    throw new RefundRouteError(409, "ORDER_NOT_REFUNDABLE");
+  }
+
+  let computedTotal = 0;
+
+  for (const line of order.lines) {
+    if (
+      !ORDER_LINE_ID_PATTERN.test(line.orderLineId) ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(line.catalogId) ||
+      !Number.isInteger(line.sizeFr) ||
+      line.sizeFr < 48 ||
+      line.sizeFr > 70 ||
+      !Number.isInteger(line.quantity) ||
+      line.quantity < 1 ||
+      !Number.isSafeInteger(line.unitAmount) ||
+      line.unitAmount <= 0 ||
+      !Number.isInteger(line.refundedQuantity) ||
+      line.refundedQuantity < 0 ||
+      !Number.isInteger(line.reservedRefundQuantity) ||
+      line.reservedRefundQuantity < 0 ||
+      line.refundedQuantity + line.reservedRefundQuantity > line.quantity
+    ) {
+      throw new RefundRouteError(409, "ORDER_LINE_NOT_REFUNDABLE");
+    }
+
+    computedTotal += line.quantity * line.unitAmount;
+  }
+
+  if (computedTotal !== order.amountTotal) {
+    throw new RefundRouteError(409, "ORDER_AMOUNT_MISMATCH");
   }
 }
 
@@ -269,6 +434,12 @@ export async function POST(request: Request) {
   if (!env.STRIPE_SECRET_KEY?.startsWith("sk_test_")) {
     return NextResponse.json({ ok: false, error: "REFUNDS_SANDBOX_ONLY" }, { status: 403 });
   }
+  if (!hasTrustedAdminOrigin(request, env.STRIPE_SECRET_KEY)) {
+    return NextResponse.json({ ok: false, error: "INVALID_REQUEST_ORIGIN" }, { status: 403 });
+  }
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+    return NextResponse.json({ ok: false, error: "JSON_CONTENT_TYPE_REQUIRED" }, { status: 415 });
+  }
   if (!runtimeEnv.DB) {
     return NextResponse.json({ ok: false, error: "MISSING_D1_DB_BINDING" }, { status: 503 });
   }
@@ -281,38 +452,94 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "INVALID_JSON_REQUEST" }, { status: 400 });
   }
 
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return NextResponse.json({ ok: false, error: "INVALID_REFUND_REQUEST" }, { status: 400 });
-  }
+  const parsedRequest = parseRefundRequest(body);
 
-  const source = body as Record<string, unknown>;
-  const keys = Object.keys(source).sort();
-  const orderLineId = typeof source.order_line_id === "string" ? source.order_line_id.trim() : "";
-  const quantity = source.quantity;
-
-  if (
-    keys.length !== 2 ||
-    keys[0] !== "order_line_id" ||
-    keys[1] !== "quantity" ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      orderLineId,
-    ) ||
-    !Number.isInteger(quantity) ||
-    (quantity as number) < 1
-  ) {
+  if (!parsedRequest) {
     return NextResponse.json({ ok: false, error: "INVALID_REFUND_REQUEST" }, { status: 400 });
   }
 
   try {
     const db = runtimeEnv.DB;
-    const requestedQuantity = quantity as number;
-    const context = await getRefundContext(db, orderLineId);
+
+    if (parsedRequest.action === "search") {
+      const order = await findRefundOrderByReference(db, parsedRequest.reference);
+
+      if (!order) {
+        throw new RefundRouteError(404, "ORDER_NOT_FOUND");
+      }
+
+      validateOrderSearchResult(order);
+
+      return NextResponse.json({
+        ok: true,
+        order: {
+          id: order.id,
+          stripe_payment_intent_id: order.stripePaymentIntentId,
+          stripe_checkout_session_id: order.stripeCheckoutSessionId,
+          amount_total: order.amountTotal,
+          currency: order.currency,
+          lines: order.lines.map((line) => {
+            const refundableQuantity =
+              line.quantity - line.refundedQuantity - line.reservedRefundQuantity;
+
+            return {
+              order_line_id: line.orderLineId,
+              catalog_id: line.catalogId,
+              product_name: CATALOG_NAMES[line.catalogId] ?? line.catalogId,
+              size_fr: line.sizeFr,
+              quantity: line.quantity,
+              unit_amount: line.unitAmount,
+              refunded_quantity: line.refundedQuantity,
+              refundable_quantity: refundableQuantity,
+              refundable_amount: refundableQuantity * line.unitAmount,
+            };
+          }),
+        },
+      });
+    }
+
+    const context = await getRefundContext(db, parsedRequest.orderLineId);
 
     if (!context) {
       throw new RefundRouteError(404, "ORDER_LINE_NOT_FOUND");
     }
 
-    const existingOperation = await findRefundOperation(db, orderLineId, requestedQuantity);
+    validateRefundableContext(context);
+
+    const availableQuantity =
+      context.quantity - context.refundedQuantity - context.reservedRefundQuantity;
+    const refundableAmount = availableQuantity * context.unitAmount;
+
+    if (parsedRequest.action === "preview") {
+      return NextResponse.json({
+        ok: true,
+        preview: {
+          order_line_id: context.orderLineId,
+          catalog_id: context.catalogId,
+          product_name: CATALOG_NAMES[context.catalogId] ?? context.catalogId,
+          size_fr: context.sizeFr,
+          unit_amount: context.unitAmount,
+          available_quantity: availableQuantity,
+          refundable_amount: refundableAmount,
+          currency: context.currency,
+        },
+      });
+    }
+
+    if (parsedRequest.amount % context.unitAmount !== 0) {
+      throw new RefundRouteError(409, "REFUND_AMOUNT_UNAVAILABLE");
+    }
+
+    const requestedQuantity = parsedRequest.amount / context.unitAmount;
+    const existingOperation = await findRefundOperation(
+      db,
+      context.orderLineId,
+      requestedQuantity,
+    );
+
+    if (!existingOperation && parsedRequest.amount > refundableAmount) {
+      throw new RefundRouteError(409, "REFUND_AMOUNT_UNAVAILABLE");
+    }
 
     if (!existingOperation) {
       validateD1Context(context, requestedQuantity);
