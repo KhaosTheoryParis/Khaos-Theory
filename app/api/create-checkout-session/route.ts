@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
+import { checkoutRedirectUrls, resolveCheckoutLocale } from "../../services/checkout-locale";
 import { isCheckoutRequestBody } from "../../services/checkout-request";
 
 export const runtime = "nodejs";
@@ -14,6 +15,8 @@ const catalog = {
 } as const;
 
 type CatalogId = keyof typeof catalog;
+type CartItem = { productId?: unknown; size?: unknown; quantity?: unknown };
+
 export async function POST(request: Request) {
   const { env } = getCloudflareContext();
 
@@ -35,6 +38,13 @@ export async function POST(request: Request) {
   if (!Array.isArray(body.items) || body.items.length === 0) {
     return NextResponse.json({ error: "Your kart is empty." }, { status: 400 });
   }
+  const items: CartItem[] = body.items;
+
+  const localeResult = resolveCheckoutLocale(body);
+  if (!localeResult.ok) {
+    return NextResponse.json({ error: "Invalid checkout locale." }, { status: 400 });
+  }
+  const redirectUrls = checkoutRedirectUrls(env.SITE_URL, localeResult.locale);
 
   const parameters = new URLSearchParams({
     mode: "payment",
@@ -42,11 +52,11 @@ export async function POST(request: Request) {
     "name_collection[individual][enabled]": "true",
     "name_collection[individual][optional]": "false",
     "metadata[schema_version]": "1",
-    success_url: `${env.SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${env.SITE_URL}/checkout.html`,
+    success_url: redirectUrls.successUrl,
+    cancel_url: redirectUrls.cancelUrl,
   });
 
-  for (const [index, item] of body.items.entries()) {
+  for (const [index, item] of items.entries()) {
     const productId = typeof item.productId === "string" ? item.productId : "";
     const product = catalog[productId as CatalogId];
     const quantity = Number(item.quantity);

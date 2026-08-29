@@ -3,9 +3,12 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Khaos Theory",
+  icons: {
+    icon: [{ url: "/logo.jpeg", type: "image/jpeg" }],
+  },
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function AdminRootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="fr">
       <body>{children}</body>
