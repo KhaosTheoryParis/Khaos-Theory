@@ -8,7 +8,9 @@
     "build": "next build",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy -- --keep-vars",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "security:env": "node scripts/check-no-runtime-secrets-in-env.mjs",
+    "test:queue": "pnpm security:env && tsc -p tsconfig.queue-tests.json && NODE_PATH=./node_modules node --test /tmp/khaos-theory-queue-tests/tests/*.test.js"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.20.2",

@@ -162,10 +162,19 @@ if (checkoutSummary) {
             return;
         }
 
-        checkoutSummary.innerHTML = `<div class="section-title">Order summary</div><div class="checkout-lines">${cart.map((item) => `<div class="checkout-line"><div class="checkout-line-details"><strong>${item.name}</strong><span>FR ${item.size} / US ${item.usSize}</span></div><div class="checkout-line-actions"><span class="checkout-line-price">${formatPrice(item.price * item.quantity)}</span><div class="checkout-quantity" aria-label="Quantity for ${item.name}"><button type="button" data-checkout-action="decrease" data-cart-key="${item.key}" aria-label="Remove one ${item.name}">−</button><span aria-live="polite">${item.quantity}</span><button type="button" data-checkout-action="increase" data-cart-key="${item.key}" aria-label="Add one ${item.name}"${item.quantity >= 5 ? " disabled" : ""}>+</button></div></div></div>`).join("")}</div><div class="checkout-total"><span>TOTAL</span><strong>${formatPrice(total)}</strong></div><button class="stripe-checkout-button" type="button">KONFIRM &amp; PAY</button><p class="checkout-status" aria-live="polite"></p>`;
+        checkoutSummary.innerHTML = `<div class="section-title">Order summary</div><div class="checkout-lines">${cart.map((item) => `<div class="checkout-line"><div class="checkout-line-details"><strong>${item.name}</strong><span>FR ${item.size} / US ${item.usSize}</span></div><div class="checkout-quantity" aria-label="Quantity for ${item.name}"><button type="button" data-checkout-action="decrease" data-cart-key="${item.key}" aria-label="Remove one ${item.name}">−</button><span aria-live="polite">${item.quantity}</span><button type="button" data-checkout-action="increase" data-cart-key="${item.key}" aria-label="Add one ${item.name}"${item.quantity >= 5 ? " disabled" : ""}>+</button></div><span class="checkout-line-price">${formatPrice(item.price * item.quantity)}</span><button type="button" class="checkout-remove-button" data-checkout-remove="${item.key}" aria-label="Remove ${item.name} from kart">×</button></div>`).join("")}</div><div class="checkout-total"><span>TOTAL</span><strong>${formatPrice(total)}</strong></div><button class="stripe-checkout-button" type="button">KONFIRM &amp; PAY</button><p class="checkout-status" aria-live="polite"></p>`;
     };
 
     checkoutSummary.addEventListener("click", async (event) => {
+        const removeButton = event.target.closest("[data-checkout-remove]");
+
+        if (removeButton) {
+            saveCart(readCart().filter((item) => item.key !== removeButton.dataset.checkoutRemove));
+            renderCart();
+            renderCheckout();
+            return;
+        }
+
         const quantityButton = event.target.closest("[data-checkout-action]");
 
         if (quantityButton) {

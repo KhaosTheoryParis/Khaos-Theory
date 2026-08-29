@@ -31,6 +31,7 @@ export type PersistOrderInput = {
   stripeCheckoutSessionId: string;
   stripePaymentIntentId: string;
   pennylaneInvoiceId: string;
+  customerName: string | null;
   customerEmail: string;
   currency: string;
   amountTotal: number;
@@ -45,6 +46,7 @@ type OrderRow = {
   stripe_checkout_session_id: string;
   stripe_payment_intent_id: string;
   pennylane_invoice_id: string;
+  customer_name: string | null;
   customer_email: string;
   currency: string;
   amount_total: number;
@@ -84,6 +86,11 @@ class OrderPersistenceError extends Error {
   }
 }
 
+export function normalizeCustomerName(value: string | null) {
+  const normalized = value?.trim() ?? "";
+  return normalized || null;
+}
+
 function assertValidInput(input: PersistOrderInput) {
   const invalidFields: string[] = [];
 
@@ -103,7 +110,12 @@ function assertValidInput(input: PersistOrderInput) {
   }
   if (input.status !== "paid") invalidFields.push("status");
   if (input.schemaVersion !== 1) invalidFields.push("schema_version");
-  if (Number.isNaN(Date.parse(input.createdAt))) invalidFields.push("created_at");
+  const createdAt = Date.parse(input.createdAt);
+  if (
+    Number.isNaN(createdAt) ||
+    !input.createdAt.endsWith("Z") ||
+    new Date(createdAt).toISOString() !== input.createdAt
+  ) invalidFields.push("created_at");
   if (input.lines.length === 0) invalidFields.push("lines");
 
   const orderLineIds = new Set<string>();
@@ -205,6 +217,12 @@ async function verifyExistingOrder(
     ["created_at", order.created_at, input.createdAt],
   ];
 
+  if (
+    order.customer_name !== null &&
+    input.customerName !== null &&
+    order.customer_name !== input.customerName
+  ) conflictingFields.push("customer_name");
+
   for (const [field, actual, expected] of immutableOrderFields) {
     if (actual !== expected) conflictingFields.push(field);
   }
@@ -262,6 +280,7 @@ async function verifyExistingOrder(
 }
 
 export async function persistPaidOrder(db: OrdersDatabase, input: PersistOrderInput) {
+  input = { ...input, customerName: normalizeCustomerName(input.customerName) };
   assertValidInput(input);
 
   const existingOrder = await findOrderByReferences(db, input);
@@ -278,15 +297,16 @@ export async function persistPaidOrder(db: OrdersDatabase, input: PersistOrderIn
       .prepare(
         `INSERT INTO orders (
           id, stripe_checkout_session_id, stripe_payment_intent_id,
-          pennylane_invoice_id, customer_email, currency, amount_total,
+          pennylane_invoice_id, customer_name, customer_email, currency, amount_total,
           status, schema_version, created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
       )
       .bind(
         orderId,
         input.stripeCheckoutSessionId,
         input.stripePaymentIntentId,
         input.pennylaneInvoiceId,
+        input.customerName,
         input.customerEmail,
         input.currency,
         input.amountTotal,

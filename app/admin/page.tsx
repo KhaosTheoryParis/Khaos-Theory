@@ -3,7 +3,9 @@ import { headers } from "next/headers";
 import { unauthorized } from "next/navigation";
 import { verifyCloudflareAccess } from "../services/cloudflare-access";
 import styles from "./admin.module.css";
+import OrdersBrowser from "./orders-browser";
 import RefundForm from "./refund-form";
+import SalesAnalytics from "./sales-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +27,11 @@ export default async function AdminPage() {
           <h1>Khaos Theory Admin</h1>
           <p>Authenticated</p>
         </header>
-        <RefundForm />
+        <SalesAnalytics />
+        <OrdersBrowser />
+        <div className={styles.refundContainer}>
+          <RefundForm />
+        </div>
       </section>
     </main>
   );

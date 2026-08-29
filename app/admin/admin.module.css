@@ -9,7 +9,7 @@
 }
 
 .panel {
-  width: min(560px, 100%);
+  width: min(1180px, 100%);
 }
 
 .header {
@@ -17,6 +17,7 @@
 }
 
 .header h1,
+.ordersSection h2,
 .refundSection h2 {
   margin: 0;
   font-weight: 500;
@@ -30,6 +31,376 @@
 .refundSection {
   padding-top: 32px;
   border-top: 1px solid #333;
+}
+
+.refundContainer {
+  width: min(560px, 100%);
+  margin-top: 64px;
+}
+
+.ordersSection {
+  padding-top: 32px;
+  border-top: 1px solid #333;
+}
+
+.analyticsSection {
+  margin-bottom: 64px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid #333;
+}
+
+.analyticsSection h2,
+.analyticsPanel h3 {
+  margin: 0;
+  font-weight: 500;
+}
+
+.analyticsPanel {
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid #333;
+}
+
+.analyticsPanel + .analyticsPanel {
+  margin-top: 48px;
+}
+
+.analyticsPanelHeading h3 {
+  font-size: 20px;
+}
+
+.analyticsPanelHeading p {
+  margin: 8px 0 0;
+  color: #999;
+  font-size: 13px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #999;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.analyticsControls {
+  margin-top: 28px;
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.analyticsControls label {
+  display: grid;
+  gap: 7px;
+  color: #aaa;
+  font-size: 13px;
+}
+
+.analyticsControls input,
+.analyticsControls select {
+  min-height: 43px;
+  padding: 10px 12px;
+  color: #f2f2f2;
+  background: #111;
+  border: 1px solid #444;
+  border-radius: 0;
+  font: inherit;
+}
+
+.activePeriod {
+  min-height: 43px;
+  display: flex;
+  align-items: center;
+  color: #999;
+  font-size: 13px;
+}
+
+.analyticsStatus {
+  min-height: 20px;
+  margin: 24px 0 12px;
+  color: #999;
+  font-size: 13px;
+}
+
+.analyticsError {
+  margin-top: 24px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #ffb3b3;
+  border: 1px solid #8d2b2b;
+}
+
+.analyticsError p {
+  margin: 0;
+}
+
+.analyticsError button {
+  min-height: 36px;
+  padding: 7px 12px;
+  flex: none;
+  color: #f2f2f2;
+  background: transparent;
+  border: 1px solid currentColor;
+  font: inherit;
+  cursor: pointer;
+}
+
+.analyticsTotals {
+  margin: 24px 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.analyticsPanel:last-child .analyticsTotals {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.analyticsTotals article {
+  padding: 20px;
+  display: grid;
+  gap: 8px;
+  background: #0d0d0d;
+  border: 1px solid #333;
+}
+
+.analyticsTotals span {
+  color: #999;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analyticsTotals strong {
+  font-size: 26px;
+  font-weight: 500;
+}
+
+.salesTableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #333;
+}
+
+.salesTable {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.salesTable th,
+.salesTable td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #292929;
+  text-align: left;
+}
+
+.salesTable th {
+  color: #999;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.salesTable th button {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.salesTable th button span {
+  display: inline-block;
+  width: 14px;
+}
+
+.salesTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.sectionHeading p,
+.sectionHeading > span,
+.muted,
+.orderListStatus {
+  color: #999;
+}
+
+.sectionHeading p {
+  margin: 8px 0 0;
+}
+
+.sectionHeading > span {
+  flex: none;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.orderFilters {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.orderFilters label {
+  display: grid;
+  gap: 7px;
+  color: #aaa;
+  font-size: 13px;
+}
+
+.orderFilters input,
+.orderFilters select {
+  min-width: 0;
+  width: 100%;
+  min-height: 43px;
+  padding: 10px 12px;
+  color: #f2f2f2;
+  background: #111;
+  border: 1px solid #444;
+  border-radius: 0;
+  font: inherit;
+}
+
+.globalSearch {
+  grid-column: 1 / -1;
+}
+
+.filterActions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+}
+
+.filterActions button,
+.pagination button {
+  min-height: 43px;
+  padding: 10px 18px;
+  color: #050505;
+  background: #f2f2f2;
+  border: 1px solid #f2f2f2;
+  font: inherit;
+  cursor: pointer;
+}
+
+.filterActions .secondaryButton,
+.pagination button {
+  color: #f2f2f2;
+  background: transparent;
+  border-color: #555;
+}
+
+.filterActions button:disabled,
+.pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.orderListStatus {
+  min-height: 20px;
+  margin: 24px 0 12px;
+  font-size: 13px;
+}
+
+.ordersTableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #333;
+}
+
+.ordersTable {
+  width: 100%;
+  min-width: 1050px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ordersTable th,
+.ordersTable td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #292929;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ordersTable th {
+  color: #999;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ordersTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ordersTable code {
+  display: block;
+  max-width: 170px;
+  overflow: hidden;
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.productList {
+  min-width: 180px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.productList li + li {
+  margin-top: 6px;
+}
+
+.status {
+  display: inline-block;
+  padding: 4px 7px;
+  border: 1px solid #444;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.emptyState {
+  padding: 30px !important;
+  color: #999;
+  text-align: center !important;
+}
+
+.pagination {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.pagination span {
+  color: #aaa;
+  font-size: 13px;
 }
 
 .sandboxNotice {
@@ -173,6 +544,67 @@
   opacity: 0.4;
 }
 
+.lineSelection {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.lineSelection input {
+  margin-top: 4px;
+}
+
+.lineSelection span {
+  display: grid;
+  gap: 4px;
+}
+
+.lineSelection small,
+.fullyRefunded {
+  color: #999;
+  font-size: 13px;
+}
+
+.quantityLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  font-size: 14px;
+}
+
+.quantityLabel select {
+  min-width: 76px;
+  padding: 8px 10px;
+  color: #f2f2f2;
+  background: #111;
+  border: 1px solid #555;
+  font: inherit;
+}
+
+.fullyRefunded {
+  margin: 14px 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.refundTotal {
+  margin-top: 22px;
+  padding-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid #444;
+  letter-spacing: 0.05em;
+}
+
+.review h3 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
 .review {
   margin-top: 30px;
   padding: 22px;
@@ -231,4 +663,59 @@
 .error {
   color: #ffb3b3;
   border-color: #8d2b2b;
+}
+
+@media (max-width: 800px) {
+  .main {
+    padding: 36px 16px;
+  }
+
+  .header {
+    margin-bottom: 32px;
+  }
+
+  .sectionHeading {
+    display: block;
+  }
+
+  .sectionHeading > span {
+    display: block;
+    margin-top: 12px;
+  }
+
+  .orderFilters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pagination {
+    justify-content: space-between;
+  }
+
+  .analyticsPanel:last-child .analyticsTotals {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .orderFilters {
+    grid-template-columns: 1fr;
+  }
+
+  .globalSearch,
+  .filterActions {
+    grid-column: auto;
+  }
+
+  .filterActions {
+    display: grid;
+  }
+
+  .analyticsTotals {
+    grid-template-columns: 1fr;
+  }
+
+  .analyticsError {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

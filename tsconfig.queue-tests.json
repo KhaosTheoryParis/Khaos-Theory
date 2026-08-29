@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "incremental": false,
+    "isolatedModules": false,
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "noEmit": false,
+    "outDir": "/tmp/khaos-theory-queue-tests",
+    "plugins": []
+  },
+  "include": [
+    "tests/*.test.ts"
+  ]
+}

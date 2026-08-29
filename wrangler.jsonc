@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "khaos-theory",
-  "main": ".open-next/worker.js",
+  "main": "worker.ts",
   "compatibility_date": "2026-08-20",
   "compatibility_flags": [
     "nodejs_compat",
@@ -10,6 +10,35 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
+  },
+  "vars": {
+    "STRIPE_QUEUE_MODE": "required"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "STRIPE_EVENTS_QUEUE",
+        "queue": "khaos-theory-stripe-events"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "khaos-theory-stripe-events",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 5,
+        "dead_letter_queue": "khaos-theory-stripe-events-dlq",
+        "max_concurrency": 1,
+        "retry_delay": 60
+      }
+    ]
   },
   "d1_databases": [
     {

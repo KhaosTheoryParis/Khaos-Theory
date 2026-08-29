@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
+import { isCheckoutRequestBody } from "../../services/checkout-request";
 
 export const runtime = "nodejs";
 
@@ -13,8 +14,6 @@ const catalog = {
 } as const;
 
 type CatalogId = keyof typeof catalog;
-type CartItem = { productId?: unknown; size?: unknown; quantity?: unknown };
-
 export async function POST(request: Request) {
   const { env } = getCloudflareContext();
 
@@ -22,10 +21,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Stripe runtime variables are not configured." }, { status: 503 });
   }
 
-  let body: { items?: CartItem[] };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
+    return NextResponse.json({ error: "Invalid JSON request." }, { status: 400 });
+  }
+
+  if (!isCheckoutRequestBody(body)) {
     return NextResponse.json({ error: "Invalid JSON request." }, { status: 400 });
   }
 

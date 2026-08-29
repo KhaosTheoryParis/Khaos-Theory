@@ -1115,6 +1115,10 @@ footer a:focus-visible {
 }
 
 .checkout-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    column-gap: 24px;
     border-bottom: 1px solid #222;
 }
 
@@ -1138,18 +1142,35 @@ footer a:focus-visible {
     flex: 0 0 auto;
 }
 
-.checkout-line-actions {
-    flex: 0 0 auto;
+.checkout-remove-button {
+    width: 34px;
+    height: 34px;
+    padding: 0;
 
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
+    display: grid;
+    place-items: center;
+
+    color: #999;
+    background: transparent;
+    border: 0;
+
+    font: inherit;
+    font-size: 32px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.checkout-remove-button:hover,
+.checkout-remove-button:focus-visible {
+    color: white;
+    transform: scale(1.12);
 }
 
 .checkout-quantity {
     display: inline-flex;
     align-items: center;
-    margin-top: 10px;
+    justify-self: center;
     border: 1px solid #333;
 }
 
@@ -1288,6 +1309,17 @@ footer a:focus-visible {
     .checkout-line,
     .checkout-total {
         gap: 15px;
+    }
+
+    .checkout-line {
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
+        column-gap: 10px;
+    }
+
+    .checkout-remove-button {
+        width: 30px;
+        height: 30px;
+        font-size: 29px;
     }
 
     #rings .section-title,

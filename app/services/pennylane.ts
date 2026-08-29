@@ -6,6 +6,7 @@ const STRIPE_REFUND_REFERENCE_PREFIX = "stripe_refund_";
 const STRIPE_CUSTOMER_REFERENCE_PREFIX = "stripe_email_";
 const PENNYLANE_EXEMPT_VAT_RATE = "exempt";
 const VAT_EXEMPTION_MENTION = "TVA non applicable, art. 293 B du CGI";
+const PENNYLANE_REQUEST_TIMEOUT_MS = 15_000;
 
 type PennylaneOperation =
   | "verify_sandbox"
@@ -132,6 +133,7 @@ type PennylaneSyncResult =
   | {
       status: "created";
       invoiceId: number | string;
+      customerName: string | null;
       customerEmail: string;
       amount: number;
       currency: string;
@@ -147,6 +149,7 @@ type PennylaneSyncResult =
       amount: number;
       currency: string;
       paymentIntentId: string;
+      customerName: string | null;
       customerEmail: string | null;
       markAsPaid: PennylaneMarkAsPaidResult;
       email: PennylaneEmailResult;
@@ -154,9 +157,23 @@ type PennylaneSyncResult =
       createdAt: string;
     };
 
+export type PennylaneSyncProgress = (entry: {
+  stage: string;
+  status: "start" | "success" | "error";
+  details?: Record<string, string | number | boolean | null>;
+}) => void;
+
 type PennylaneErrorDetails = {
   code: string;
   operation?: PennylaneOperation;
+  stripe_operation?: string;
+  stripe_resource?: string;
+  stripe_error_type?: string;
+  stripe_error_code?: string;
+  duration_ms?: number;
+  path?: string;
+  method?: string;
+  timeout_ms?: number;
   http_status?: number;
   request_id?: string;
   error_body?: Record<string, string | number | boolean | null>;
@@ -179,6 +196,90 @@ class PennylaneSyncError extends Error {
     super(details.code);
     this.name = "PennylaneSyncError";
     this.details = details;
+  }
+}
+
+function sanitizeStripeErrorMessage(message: string) {
+  return message
+    .replace(/\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9_]+\b/g, "[REDACTED]")
+    .replace(/\bwhsec_[A-Za-z0-9_]+\b/g, "[REDACTED]")
+    .slice(0, 500);
+}
+
+function classifyStripeError(
+  error: unknown,
+  stripeOperation?: string,
+  stripeResource?: string,
+  durationMs?: number,
+): PennylaneErrorDetails {
+  if (!(error instanceof Stripe.errors.StripeError)) {
+    return { code: "UNEXPECTED_PENNYLANE_ERROR" };
+  }
+
+  const isConnectionError = error instanceof Stripe.errors.StripeConnectionError;
+  const isTimeout = isConnectionError && /timeout|timed out/i.test(error.message);
+
+  return {
+    code: isTimeout
+      ? "STRIPE_REQUEST_TIMEOUT"
+      : isConnectionError
+        ? "STRIPE_NETWORK_ERROR"
+        : "STRIPE_API_ERROR",
+    stripe_operation: stripeOperation,
+    stripe_resource: stripeResource,
+    stripe_error_type: error.type,
+    stripe_error_code: error.code,
+    duration_ms: durationMs,
+    http_status: error.statusCode,
+    request_id: error.requestId,
+    error_message: sanitizeStripeErrorMessage(error.message),
+  };
+}
+
+async function runStripeRequest<T>(
+  stripeOperation: string,
+  stripeResource: string,
+  onProgress: PennylaneSyncProgress | undefined,
+  request: () => Promise<T>,
+) {
+  const startedAt = Date.now();
+  onProgress?.({
+    stage: stripeOperation,
+    status: "start",
+    details: { stripe_resource: stripeResource },
+  });
+
+  try {
+    const result = await request();
+    onProgress?.({
+      stage: stripeOperation,
+      status: "success",
+      details: {
+        stripe_resource: stripeResource,
+        duration_ms: Date.now() - startedAt,
+      },
+    });
+    return result;
+  } catch (error) {
+    const details = classifyStripeError(
+      error,
+      stripeOperation,
+      stripeResource,
+      Date.now() - startedAt,
+    );
+    onProgress?.({
+      stage: stripeOperation,
+      status: "error",
+      details: {
+        code: details.code,
+        stripe_resource: stripeResource,
+        duration_ms: details.duration_ms ?? null,
+        stripe_error_type: details.stripe_error_type ?? null,
+        stripe_error_code: details.stripe_error_code ?? null,
+        error_message: details.error_message ?? null,
+      },
+    });
+    throw new PennylaneSyncError(details);
   }
 }
 
@@ -250,6 +351,33 @@ async function pennylaneRequest<T>(
   init: RequestInit = {},
 ): Promise<T> {
   let response: Response;
+  const controller = new AbortController();
+  let didTimeout = false;
+  const timeout = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, PENNYLANE_REQUEST_TIMEOUT_MS);
+  const method = init.method?.toUpperCase() ?? "GET";
+  const cleanup = () => {
+    clearTimeout(timeout);
+    init.signal?.removeEventListener("abort", abortFromCaller);
+  };
+  const timeoutError = () =>
+    new PennylaneSyncError({
+      code: "PENNYLANE_REQUEST_TIMEOUT",
+      operation,
+      path,
+      method,
+      timeout_ms: PENNYLANE_REQUEST_TIMEOUT_MS,
+    });
+
+  const abortFromCaller = () => controller.abort(init.signal?.reason);
+
+  if (init.signal?.aborted) {
+    abortFromCaller();
+  } else {
+    init.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
 
   try {
     response = await fetch(`${PENNYLANE_API_BASE_URL}${path}`, {
@@ -261,31 +389,45 @@ async function pennylaneRequest<T>(
         ...init.headers,
       },
       cache: "no-store",
+      signal: controller.signal,
     });
   } catch {
+    cleanup();
+
+    if (didTimeout) {
+      throw timeoutError();
+    }
+
     throw new PennylaneSyncError({ code: "PENNYLANE_API_UNREACHABLE", operation });
   }
 
-  if (!response.ok) {
-    const safeError = await readSafePennylaneError(response, token);
-
-    throw new PennylaneSyncError({
-      code: "PENNYLANE_API_REQUEST_FAILED",
-      operation,
-      http_status: response.status,
-      request_id: response.headers.get("x-request-id") ?? undefined,
-      ...safeError,
-    });
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
   try {
-    return (await response.json()) as T;
-  } catch {
-    throw new PennylaneSyncError({ code: "PENNYLANE_INVALID_JSON_RESPONSE", operation });
+    if (!response.ok) {
+      const safeError = await readSafePennylaneError(response, token);
+
+      if (didTimeout) throw timeoutError();
+
+      throw new PennylaneSyncError({
+        code: "PENNYLANE_API_REQUEST_FAILED",
+        operation,
+        http_status: response.status,
+        request_id: response.headers.get("x-request-id") ?? undefined,
+        ...safeError,
+      });
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    try {
+      return (await response.json()) as T;
+    } catch {
+      if (didTimeout) throw timeoutError();
+      throw new PennylaneSyncError({ code: "PENNYLANE_INVALID_JSON_RESPONSE", operation });
+    }
+  } finally {
+    cleanup();
   }
 }
 
@@ -384,6 +526,14 @@ function getBillingAddress(details: Stripe.Checkout.Session.CustomerDetails) {
     city: completeAddress.city,
     country_alpha2: completeAddress.country,
   };
+}
+
+export function getCheckoutCustomerName(
+  details: Stripe.Checkout.Session.CustomerDetails | null | undefined,
+) {
+  const name = details?.individual_name ?? details?.name;
+  const normalized = name?.trim() ?? "";
+  return normalized || null;
 }
 
 function splitIndividualName(name: string) {
@@ -673,6 +823,7 @@ function parseEuroAmountToCents(amount: string) {
 async function retrieveSucceededPaymentIntent(
   stripe: Stripe,
   session: Stripe.Checkout.Session,
+  onProgress?: PennylaneSyncProgress,
 ) {
   const paymentIntentReference = session.payment_intent;
   const paymentIntentId =
@@ -687,7 +838,12 @@ async function retrieveSucceededPaymentIntent(
     });
   }
 
-  const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+  const paymentIntent = await runStripeRequest(
+    "stripe.payment_intents.retrieve",
+    "payment_intent",
+    onProgress,
+    () => stripe.paymentIntents.retrieve(paymentIntentId),
+  );
 
   if (paymentIntent.id !== paymentIntentId || paymentIntent.object !== "payment_intent") {
     throw new PennylaneSyncError({ code: "STRIPE_PAYMENT_INTENT_ID_MISMATCH" });
@@ -1692,18 +1848,265 @@ export async function syncPartialRefundToPennylane({
   }
 }
 
+export type PennylaneRefundLineInput = {
+  orderLineId: string;
+  invoiceLineId: string;
+  quantity: number;
+  unitAmount: number;
+};
+
+type MultiLineRefundDependencies = {
+  inspectEnvironment?: typeof inspectPennylaneEnvironment;
+  findInvoice?: typeof findInvoice;
+  retrieveInvoice?: typeof retrieveInvoice;
+  listInvoiceLines?: typeof listAllInvoiceLines;
+  findCreditNote?: typeof findCreditNote;
+  createCreditNote?: (
+    token: string,
+    payload: Record<string, unknown>,
+  ) => Promise<PennylaneInvoice>;
+  verifyAndLink?: typeof verifyAndLinkCreditNote;
+  verifyLines?: typeof verifyMultiLineCreditNote;
+  sendEmail?: typeof sendSandboxPartialCreditNoteByEmail;
+};
+
+function creditLineFingerprint({
+  label,
+  unit,
+  quantity,
+  unitAmount,
+}: {
+  label: string;
+  unit: string;
+  quantity: number;
+  unitAmount: number;
+}) {
+  return `${label}\u0000${unit}\u0000${quantity}\u0000${unitAmount}`;
+}
+
+async function verifyMultiLineCreditNote(
+  token: string,
+  creditNoteId: number | string,
+  expectedLines: Array<{
+    sourceLine: PennylaneStoredInvoiceLine;
+    quantity: number;
+    unitAmount: number;
+  }>,
+) {
+  const actualLines = await listAllInvoiceLines(token, creditNoteId, "rank");
+  if (actualLines.length !== expectedLines.length) {
+    throw new PennylaneSyncError({
+      code: "PENNYLANE_PARTIAL_CREDIT_NOTE_LINE_COUNT_MISMATCH",
+      operation: "verify_credit_note",
+      invoice_id: creditNoteId,
+    });
+  }
+
+  const expectedFingerprints = expectedLines.map(({ sourceLine, quantity, unitAmount }) =>
+    creditLineFingerprint({
+      label: sourceLine.label as string,
+      unit: sourceLine.unit as string,
+      quantity,
+      unitAmount: -unitAmount,
+    }),
+  ).sort();
+  const actualFingerprints = actualLines.map((line) => {
+    const quantity = Number(line.quantity);
+    const unitAmount = line.raw_currency_unit_price
+      ? parseEuroAmountToCents(line.raw_currency_unit_price)
+      : Number.NaN;
+    if (!line.label || !line.unit || !Number.isInteger(quantity) || unitAmount === null ||
+      line.vat_rate !== PENNYLANE_EXEMPT_VAT_RATE) {
+      throw new PennylaneSyncError({
+        code: "PENNYLANE_PARTIAL_CREDIT_NOTE_LINE_MISMATCH",
+        operation: "verify_credit_note",
+        invoice_id: creditNoteId,
+      });
+    }
+    return creditLineFingerprint({ label: line.label, unit: line.unit, quantity, unitAmount });
+  }).sort();
+
+  if (expectedFingerprints.some((value, index) => value !== actualFingerprints[index])) {
+    throw new PennylaneSyncError({
+      code: "PENNYLANE_PARTIAL_CREDIT_NOTE_LINE_MISMATCH",
+      operation: "verify_credit_note",
+      invoice_id: creditNoteId,
+    });
+  }
+}
+
+export async function syncMultiLineRefundToPennylane({
+  token,
+  refundId,
+  refundCreated,
+  paymentIntentId,
+  checkoutSessionId,
+  invoiceId: expectedInvoiceId,
+  lines,
+  refundAmount,
+  invoiceAmountTotal,
+  currency,
+  customerEmail,
+  dependencies = {},
+}: {
+  token: string;
+  refundId: string;
+  refundCreated: number;
+  paymentIntentId: string;
+  checkoutSessionId: string;
+  invoiceId: string;
+  lines: PennylaneRefundLineInput[];
+  refundAmount: number;
+  invoiceAmountTotal: number;
+  currency: string;
+  customerEmail: string;
+  dependencies?: MultiLineRefundDependencies;
+}): Promise<PennylanePartialCreditNoteResult> {
+  const inspectEnvironment = dependencies.inspectEnvironment ?? inspectPennylaneEnvironment;
+  const findOriginalInvoice = dependencies.findInvoice ?? findInvoice;
+  const getInvoice = dependencies.retrieveInvoice ?? retrieveInvoice;
+  const getInvoiceLines = dependencies.listInvoiceLines ?? listAllInvoiceLines;
+  const findExistingCreditNote = dependencies.findCreditNote ?? findCreditNote;
+  const verifyLink = dependencies.verifyAndLink ?? verifyAndLinkCreditNote;
+  const verifyLines = dependencies.verifyLines ?? verifyMultiLineCreditNote;
+  const sendEmail = dependencies.sendEmail ?? sendSandboxPartialCreditNoteByEmail;
+  const createCreditNote = dependencies.createCreditNote ?? (async (requestToken, payload) =>
+    pennylaneRequest<PennylaneInvoice>(requestToken, "/customer_invoices",
+      "create_credit_note", { method: "POST", body: JSON.stringify(payload) }));
+  const environment = await inspectEnvironment(token);
+  const uniqueOrderLines = new Set(lines.map((line) => line.orderLineId));
+  const uniqueInvoiceLines = new Set(lines.map((line) => line.invoiceLineId));
+  const computedAmount = lines.reduce(
+    (total, line) => total + line.unitAmount * line.quantity,
+    0,
+  );
+
+  if (!environment.isSandbox) {
+    throw new PennylaneSyncError({ code: "PENNYLANE_SANDBOX_REQUIRED" });
+  }
+  if (currency !== "eur" || lines.length < 1 ||
+    uniqueOrderLines.size !== lines.length || uniqueInvoiceLines.size !== lines.length ||
+    lines.some((line) => !Number.isInteger(line.quantity) || line.quantity < 1 ||
+      !Number.isInteger(line.unitAmount) || line.unitAmount < 1) ||
+    computedAmount !== refundAmount) {
+    throw new PennylaneSyncError({ code: "INVALID_PARTIAL_REFUND_AMOUNT_OR_CURRENCY" });
+  }
+
+  const invoiceExternalReference = `${STRIPE_INVOICE_REFERENCE_PREFIX}${checkoutSessionId}`;
+  const listedInvoice = await findOriginalInvoice(token, invoiceExternalReference);
+  if (!listedInvoice || String(requireId(listedInvoice, "find_invoice")) !== expectedInvoiceId) {
+    throw new PennylaneSyncError({ code: "PENNYLANE_REFUNDED_INVOICE_NOT_FOUND" });
+  }
+
+  const invoice = await getInvoice(token, expectedInvoiceId);
+  const customerId = invoice.customer ? requireId(invoice.customer, "retrieve_invoice") : null;
+  const invoiceAmount = invoice.currency_amount
+    ? parseEuroAmountToCents(invoice.currency_amount)
+    : null;
+  if (invoice.draft !== false || invoice.status === "credit_note" ||
+    invoice.external_reference !== invoiceExternalReference || !customerId ||
+    invoice.currency !== currency.toUpperCase() || invoiceAmount !== invoiceAmountTotal ||
+    invoice.transaction_reference?.banking_provider !== "stripe" ||
+    invoice.transaction_reference.provider_field_name !== "payment_id" ||
+    invoice.transaction_reference.provider_field_value !== paymentIntentId) {
+    throw new PennylaneSyncError({ code: "PENNYLANE_REFUNDED_INVOICE_MISMATCH" });
+  }
+
+  const sourceLines = await getInvoiceLines(token, expectedInvoiceId, "rank");
+  const sourceById = new Map(sourceLines.map((line) => [String(line.id), line]));
+  const expectedLines = lines.map((line) => {
+    const sourceLine = sourceById.get(line.invoiceLineId);
+    const sourceQuantity = Number(sourceLine?.quantity);
+    const sourceUnitAmount = sourceLine?.raw_currency_unit_price
+      ? parseEuroAmountToCents(sourceLine.raw_currency_unit_price)
+      : null;
+    const sourceAmount = sourceLine?.currency_amount
+      ? parseEuroAmountToCents(sourceLine.currency_amount)
+      : null;
+    if (!sourceLine || !sourceLine.label || !sourceLine.unit ||
+      !Number.isInteger(sourceQuantity) || sourceQuantity < line.quantity ||
+      sourceUnitAmount !== line.unitAmount || sourceAmount !== line.unitAmount * sourceQuantity ||
+      sourceLine.vat_rate !== PENNYLANE_EXEMPT_VAT_RATE) {
+      throw new PennylaneSyncError({ code: "PENNYLANE_SOURCE_INVOICE_LINE_MISMATCH" });
+    }
+    return { sourceLine, quantity: line.quantity, unitAmount: line.unitAmount };
+  });
+
+  const externalReference = `${STRIPE_REFUND_REFERENCE_PREFIX}${refundId}`;
+  const verifyExisting = async (listedCreditNote: PennylaneInvoice) => {
+    const creditNoteId = requireId(listedCreditNote, "find_credit_note");
+    await verifyLink(token, creditNoteId, expectedInvoiceId, externalReference,
+      refundAmount, currency, customerId);
+    await verifyLines(token, creditNoteId, expectedLines);
+    return creditNoteId;
+  };
+  const existing = await findExistingCreditNote(token, externalReference);
+  if (existing) {
+    return { status: "already_exists", invoiceId: expectedInvoiceId,
+      creditNoteId: await verifyExisting(existing), amount: refundAmount, currency,
+      email: { status: "skipped_existing_invoice" } };
+  }
+
+  const creditNoteDate = new Date(refundCreated * 1_000).toISOString().slice(0, 10);
+  const payload = {
+    customer_id: customerId, date: creditNoteDate, deadline: creditNoteDate,
+    currency: currency.toUpperCase(), draft: false,
+    special_mention: VAT_EXEMPTION_MENTION, external_reference: externalReference,
+    invoice_lines: expectedLines.map(({ sourceLine, quantity }) => ({
+      label: sourceLine.label,
+      quantity,
+      unit: sourceLine.unit,
+      raw_currency_unit_price: negatePennylaneUnitPrice(sourceLine.raw_currency_unit_price as string),
+      vat_rate: PENNYLANE_EXEMPT_VAT_RATE,
+    })),
+  };
+
+  try {
+    const creditNote = await createCreditNote(token, payload);
+    const creditNoteId = requireId(creditNote, "create_credit_note");
+    await verifyLink(token, creditNoteId, expectedInvoiceId, externalReference,
+      refundAmount, currency, customerId);
+    await verifyLines(token, creditNoteId, expectedLines);
+    const email = await sendEmail(environment, creditNoteId,
+      expectedInvoiceId, externalReference, customerId, refundAmount, currency, customerEmail);
+    return { status: "created", invoiceId: expectedInvoiceId, creditNoteId,
+      amount: refundAmount, currency, email };
+  } catch (error) {
+    const concurrent = await findExistingCreditNote(token, externalReference);
+    if (!concurrent) throw error;
+    return { status: "already_exists", invoiceId: expectedInvoiceId,
+      creditNoteId: await verifyExisting(concurrent), amount: refundAmount, currency,
+      email: { status: "skipped_existing_invoice" } };
+  }
+}
+
 export async function syncPaidCheckoutSessionToPennylane({
   stripe,
   sessionId,
   token,
+  onProgress,
 }: {
   stripe: Stripe;
   sessionId: string;
   token: string;
+  onProgress?: PennylaneSyncProgress;
 }): Promise<PennylaneSyncResult> {
-  const environment = await inspectPennylaneEnvironment(token);
+  const progress = (
+    stage: string,
+    status: "start" | "success",
+    details?: Record<string, string | number | boolean | null>,
+  ) => onProgress?.({ stage, status, details });
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["customer"] });
+  progress("verify_pennylane_environment", "start");
+  const environment = await inspectPennylaneEnvironment(token);
+  progress("verify_pennylane_environment", "success", { sandbox: environment.isSandbox });
+
+  const session = await runStripeRequest(
+    "stripe.checkout.sessions.retrieve",
+    "checkout_session",
+    onProgress,
+    () => stripe.checkout.sessions.retrieve(sessionId, { expand: ["customer"] }),
+  );
 
   if (session.payment_status !== "paid") {
     throw new PennylaneSyncError({ code: "STRIPE_SESSION_NOT_PAID" });
@@ -1718,15 +2121,24 @@ export async function syncPaidCheckoutSessionToPennylane({
 
   const sessionCurrency = session.currency;
 
-  const paymentIntentId = await retrieveSucceededPaymentIntent(stripe, session);
+  progress("validate_payment_intent", "start");
+  const paymentIntentId = await retrieveSucceededPaymentIntent(stripe, session, onProgress);
+  progress("validate_payment_intent", "success");
 
   const requiresSchemaV1Mapping = session.metadata?.schema_version === "1";
   let preparedInvoiceLines: PreparedInvoiceLines | undefined;
 
   const prepareInvoiceLines = async () => {
-    const lineItems = await stripe.checkout.sessions
-      .listLineItems(session.id, { limit: 100, expand: ["data.price.product"] })
-      .autoPagingToArray({ limit: 1000 });
+    progress("prepare_invoice_lines", "start");
+    const lineItems = await runStripeRequest(
+      "stripe.checkout.sessions.list_line_items",
+      "checkout_session_line_items",
+      onProgress,
+      () =>
+        stripe.checkout.sessions
+          .listLineItems(session.id, { limit: 100, expand: ["data.price.product"] })
+          .autoPagingToArray({ limit: 1000 }),
+    );
     const stripeLineItemsTotal = lineItems.reduce(
       (total, lineItem) => total + lineItem.amount_total,
       0,
@@ -1736,7 +2148,9 @@ export async function syncPaidCheckoutSessionToPennylane({
       throw new PennylaneSyncError({ code: "STRIPE_SESSION_TOTAL_MISMATCH" });
     }
 
-    return buildInvoiceLines(lineItems, sessionCurrency, requiresSchemaV1Mapping);
+    const preparedLines = buildInvoiceLines(lineItems, sessionCurrency, requiresSchemaV1Mapping);
+    progress("prepare_invoice_lines", "success", { line_count: lineItems.length });
+    return preparedLines;
   };
 
   // New schema-v1 sessions are validated before any idempotent early return.
@@ -1747,24 +2161,34 @@ export async function syncPaidCheckoutSessionToPennylane({
 
   const customerEmail =
     (session.customer_details?.email ?? session.customer_email)?.trim().toLowerCase() ?? null;
+  const customerName = getCheckoutCustomerName(session.customer_details);
   const createdAt = new Date(session.created * 1_000).toISOString();
   const externalReference = `${STRIPE_INVOICE_REFERENCE_PREFIX}${sessionId}`;
+  progress("find_existing_invoice", "start");
   const existingInvoice = await findInvoice(token, externalReference);
+  progress("find_existing_invoice", "success", { found: Boolean(existingInvoice) });
 
   if (existingInvoice) {
     const invoiceId = requireId(existingInvoice, "find_invoice");
+    progress("verify_existing_invoice", "start");
     const verifiedInvoice = await verifyCreatedInvoiceAmount(
       token,
       existingInvoice,
       invoiceId,
       session.amount_total,
     );
+    progress("verify_existing_invoice", "success");
+    progress("mark_invoice_paid", "start");
     const markAsPaid = await markSandboxInvoiceAsPaid(environment, invoiceId, verifiedInvoice);
+    progress("mark_invoice_paid", "success", { result: markAsPaid.status });
+    progress("map_pennylane_invoice_lines", "start");
     const orderLineMappings = await attachPennylaneInvoiceLineIds(
       token,
       invoiceId,
       preparedInvoiceLines?.orderLineMappings ?? [],
     );
+    progress("map_pennylane_invoice_lines", "success", { line_count: orderLineMappings.length });
+    progress("pennylane_sync", "success", { result: "already_exists" });
 
     return {
       status: "already_exists",
@@ -1772,6 +2196,7 @@ export async function syncPaidCheckoutSessionToPennylane({
       amount: session.amount_total,
       currency: session.currency,
       paymentIntentId,
+      customerName,
       customerEmail,
       markAsPaid,
       email: { status: "skipped_existing_invoice" },
@@ -1789,10 +2214,12 @@ export async function syncPaidCheckoutSessionToPennylane({
 
   preparedInvoiceLines ??= await prepareInvoiceLines();
   const { invoiceLines, orderLineMappings } = preparedInvoiceLines;
+  progress("find_or_create_customer", "start");
   const existingCustomer = await findCustomer(token, customerEmail);
   const customerId = existingCustomer
     ? requireId(existingCustomer, "find_customer")
     : await createCustomer(token, session.customer_details, customerEmail);
+  progress("find_or_create_customer", "success", { created: !existingCustomer });
   const invoiceDate = new Date(session.created * 1000).toISOString().slice(0, 10);
   const invoicePayload = {
     customer_id: customerId,
@@ -1813,27 +2240,40 @@ export async function syncPaidCheckoutSessionToPennylane({
   let invoice: PennylaneInvoice;
 
   try {
+    progress("create_finalized_invoice", "start");
     invoice = await pennylaneRequest<PennylaneInvoice>(token, "/customer_invoices", "create_invoice", {
       method: "POST",
       body: JSON.stringify(invoicePayload),
     });
+    progress("create_finalized_invoice", "success");
   } catch (error) {
+    progress("recover_concurrent_invoice", "start");
     const invoiceCreatedByConcurrentRequest = await findInvoice(token, externalReference);
 
     if (invoiceCreatedByConcurrentRequest) {
+      progress("recover_concurrent_invoice", "success", { found: true });
       const invoiceId = requireId(invoiceCreatedByConcurrentRequest, "find_invoice");
+      progress("verify_existing_invoice", "start");
       const verifiedInvoice = await verifyCreatedInvoiceAmount(
         token,
         invoiceCreatedByConcurrentRequest,
         invoiceId,
         session.amount_total,
       );
+      progress("verify_existing_invoice", "success");
+      progress("mark_invoice_paid", "start");
       const markAsPaid = await markSandboxInvoiceAsPaid(environment, invoiceId, verifiedInvoice);
+      progress("mark_invoice_paid", "success", { result: markAsPaid.status });
+      progress("map_pennylane_invoice_lines", "start");
       const persistedOrderLineMappings = await attachPennylaneInvoiceLineIds(
         token,
         invoiceId,
         orderLineMappings,
       );
+      progress("map_pennylane_invoice_lines", "success", {
+        line_count: persistedOrderLineMappings.length,
+      });
+      progress("pennylane_sync", "success", { result: "already_exists" });
 
       return {
         status: "already_exists",
@@ -1841,6 +2281,7 @@ export async function syncPaidCheckoutSessionToPennylane({
         amount: session.amount_total,
         currency: session.currency,
         paymentIntentId,
+        customerName,
         customerEmail,
         markAsPaid,
         email: { status: "skipped_existing_invoice" },
@@ -1853,13 +2294,18 @@ export async function syncPaidCheckoutSessionToPennylane({
   }
 
   const invoiceId = requireId(invoice, "create_invoice");
+  progress("verify_created_invoice", "start");
   const verifiedInvoice = await verifyCreatedInvoiceAmount(
     token,
     invoice,
     invoiceId,
     session.amount_total,
   );
+  progress("verify_created_invoice", "success");
+  progress("mark_invoice_paid", "start");
   const markAsPaid = await markSandboxInvoiceAsPaid(environment, invoiceId, verifiedInvoice);
+  progress("mark_invoice_paid", "success", { result: markAsPaid.status });
+  progress("send_invoice_email", "start");
   const email =
     markAsPaid.status === "marked_paid" || markAsPaid.status === "already_paid"
       ? await sendSandboxInvoiceByEmail(
@@ -1869,15 +2315,22 @@ export async function syncPaidCheckoutSessionToPennylane({
           customerEmail,
         )
       : { status: "skipped_mark_as_paid_incomplete" as const };
+  progress("send_invoice_email", "success", { result: email.status });
+  progress("map_pennylane_invoice_lines", "start");
   const persistedOrderLineMappings = await attachPennylaneInvoiceLineIds(
     token,
     invoiceId,
     orderLineMappings,
   );
+  progress("map_pennylane_invoice_lines", "success", {
+    line_count: persistedOrderLineMappings.length,
+  });
+  progress("pennylane_sync", "success", { result: "created" });
 
   return {
     status: "created",
     invoiceId,
+    customerName,
     customerEmail,
     amount: session.amount_total,
     currency: session.currency,
@@ -1890,5 +2343,5 @@ export async function syncPaidCheckoutSessionToPennylane({
 }
 
 export function getPennylaneErrorDetails(error: unknown): PennylaneErrorDetails {
-  return error instanceof PennylaneSyncError ? error.details : { code: "UNEXPECTED_PENNYLANE_ERROR" };
+  return error instanceof PennylaneSyncError ? error.details : classifyStripeError(error);
 }

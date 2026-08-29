@@ -1,17 +1,27 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import {
+  createAdminRefundStripeClient,
+  createAdminStripeRefund,
+  traceAdminRefundStep,
+} from "../../../services/admin-refund-stripe";
 import { verifyCloudflareAccess } from "../../../services/cloudflare-access";
 import type { OrdersDatabase } from "../../../services/orders";
 import {
+  attachStripeRefundToOperation,
+  assertRefundOperationMatches,
+  failRefundOperation,
+  failRefundOperationBeforeStripe,
   finalizeRefundOperation,
   findRefundOperation,
   findRefundOrderByReference,
-  getRefundContext,
+  getRefundContexts,
   getRefundPersistenceErrorDetails,
-  reserveRefundOperation,
+  reserveRefundOperationLines,
   type RefundContext,
   type RefundOperation,
+  type RefundSelection,
 } from "../../../services/refunds";
 
 export const runtime = "nodejs";
@@ -49,8 +59,8 @@ const CATALOG_NAMES: Record<string, string> = {
 
 type ParsedRefundRequest =
   | { action: "search"; reference: string }
-  | { action: "preview"; orderLineId: string }
-  | { action: "refund"; orderLineId: string; amount: number };
+  | { action: "preview"; lines: RefundSelection[] }
+  | { action: "refund"; lines: RefundSelection[]; operationId: string };
 
 function isLoopbackHostname(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
@@ -96,7 +106,8 @@ function parseRefundRequest(body: unknown): ParsedRefundRequest | null {
   const source = body as Record<string, unknown>;
   const action = source.action;
   const reference = typeof source.reference === "string" ? source.reference.trim() : "";
-  const orderLineId = typeof source.order_line_id === "string" ? source.order_line_id.trim() : "";
+  const operationId =
+    typeof source.refund_operation_id === "string" ? source.refund_operation_id.trim() : "";
 
   if (
     action === "search" &&
@@ -108,27 +119,46 @@ function parseRefundRequest(body: unknown): ParsedRefundRequest | null {
     return { action, reference };
   }
 
-  if (!ORDER_LINE_ID_PATTERN.test(orderLineId)) return null;
+  const rawLines = source.lines;
+  if (!Array.isArray(rawLines) || rawLines.length < 1 || rawLines.length > 100) return null;
+  const lines: RefundSelection[] = [];
+  const ids = new Set<string>();
+
+  for (const rawLine of rawLines) {
+    if (!rawLine || typeof rawLine !== "object" || Array.isArray(rawLine)) return null;
+    const line = rawLine as Record<string, unknown>;
+    if (
+      Object.keys(line).length !== 2 ||
+      !Object.hasOwn(line, "order_line_id") ||
+      !Object.hasOwn(line, "quantity") ||
+      typeof line.order_line_id !== "string" ||
+      !ORDER_LINE_ID_PATTERN.test(line.order_line_id.trim()) ||
+      !Number.isSafeInteger(line.quantity) ||
+      (line.quantity as number) < 1 ||
+      ids.has(line.order_line_id.trim())
+    ) return null;
+    ids.add(line.order_line_id.trim());
+    lines.push({ orderLineId: line.order_line_id.trim(), requestedQuantity: line.quantity as number });
+  }
 
   if (
     action === "preview" &&
     Object.keys(source).length === 2 &&
     Object.hasOwn(source, "action") &&
-    Object.hasOwn(source, "order_line_id")
+    Object.hasOwn(source, "lines")
   ) {
-    return { action, orderLineId };
+    return { action, lines };
   }
 
   if (
     action === "refund" &&
     Object.keys(source).length === 3 &&
     Object.hasOwn(source, "action") &&
-    Object.hasOwn(source, "amount") &&
-    Object.hasOwn(source, "order_line_id") &&
-    Number.isSafeInteger(source.amount) &&
-    (source.amount as number) > 0
+    Object.hasOwn(source, "lines") &&
+    Object.hasOwn(source, "refund_operation_id") &&
+    ORDER_LINE_ID_PATTERN.test(operationId)
   ) {
-    return { action, orderLineId, amount: source.amount as number };
+    return { action, lines, operationId };
   }
 
   return null;
@@ -248,11 +278,38 @@ function validateOrderSearchResult(
   }
 }
 
+function validateSelectedContexts(
+  contexts: RefundContext[],
+  selections: RefundSelection[],
+  requireAvailable = true,
+) {
+  if (contexts.length !== selections.length || contexts.length === 0) {
+    throw new RefundRouteError(409, "REFUND_LINES_MISMATCH");
+  }
+  const first = contexts[0];
+  const selectionsById = new Map(selections.map((line) => [line.orderLineId, line]));
+  for (const context of contexts) {
+    validateRefundableContext(context);
+    const selection = selectionsById.get(context.orderLineId);
+    if (!selection || context.orderId !== first.orderId ||
+      context.stripeCheckoutSessionId !== first.stripeCheckoutSessionId ||
+      context.stripePaymentIntentId !== first.stripePaymentIntentId ||
+      context.amountTotal !== first.amountTotal || context.currency !== first.currency) {
+      throw new RefundRouteError(409, "REFUND_LINES_ORDER_MISMATCH");
+    }
+    if (requireAvailable) validateD1Context(context, selection.requestedQuantity);
+  }
+}
+
 async function validateStripeOrder(
   stripe: Stripe,
-  context: RefundContext,
+  contexts: RefundContext[],
 ): Promise<ValidatedStripeOrder> {
-  const paymentIntent = await stripe.paymentIntents.retrieve(context.stripePaymentIntentId);
+  const context = contexts[0];
+  const paymentIntent = await traceAdminRefundStep(
+    "stripe.paymentIntents.retrieve",
+    () => stripe.paymentIntents.retrieve(context.stripePaymentIntentId),
+  );
 
   if (
     paymentIntent.id !== context.stripePaymentIntentId ||
@@ -265,7 +322,10 @@ async function validateStripeOrder(
   }
 
   const chargeId = requireChargeId(paymentIntent.latest_charge);
-  const charge = await stripe.charges.retrieve(chargeId);
+  const charge = await traceAdminRefundStep(
+    "stripe.charges.retrieve",
+    () => stripe.charges.retrieve(chargeId),
+  );
 
   if (
     charge.id !== chargeId ||
@@ -277,7 +337,10 @@ async function validateStripeOrder(
     throw new RefundRouteError(409, "STRIPE_CHARGE_ORDER_MISMATCH");
   }
 
-  const session = await stripe.checkout.sessions.retrieve(context.stripeCheckoutSessionId);
+  const session = await traceAdminRefundStep(
+    "stripe.checkout.sessions.retrieve",
+    () => stripe.checkout.sessions.retrieve(context.stripeCheckoutSessionId),
+  );
 
   if (
     session.id !== context.stripeCheckoutSessionId ||
@@ -290,24 +353,24 @@ async function validateStripeOrder(
     throw new RefundRouteError(409, "STRIPE_CHECKOUT_SESSION_ORDER_MISMATCH");
   }
 
-  const lineItems = await stripe.checkout.sessions
-    .listLineItems(session.id, { limit: 100 })
-    .autoPagingToArray({ limit: 1_000 });
-  const lineItem = lineItems.find((item) => item.id === context.stripeLineItemId);
-
-  if (
-    !lineItem ||
-    lineItem.metadata?.order_line_id !== context.orderLineId ||
-    lineItem.metadata?.catalog_id !== context.catalogId ||
-    lineItem.metadata?.size_fr !== String(context.sizeFr) ||
-    lineItem.metadata?.schema_version !== "1" ||
-    lineItem.currency !== "eur" ||
-    lineItem.quantity !== context.quantity ||
-    lineItem.amount_total !== context.quantity * context.unitAmount ||
-    lineItem.amount_discount !== 0 ||
-    lineItem.amount_tax !== 0
-  ) {
-    throw new RefundRouteError(409, "STRIPE_LINE_ITEM_ORDER_MISMATCH");
+  const lineItems = await traceAdminRefundStep(
+    "stripe.checkout.sessions.listLineItems",
+    () =>
+      stripe.checkout.sessions
+        .listLineItems(session.id, { limit: 100 })
+        .autoPagingToArray({ limit: 1_000 }),
+  );
+  for (const selectedContext of contexts) {
+    const lineItem = lineItems.find((item) => item.id === selectedContext.stripeLineItemId);
+    if (!lineItem || lineItem.metadata?.order_line_id !== selectedContext.orderLineId ||
+      lineItem.metadata?.catalog_id !== selectedContext.catalogId ||
+      lineItem.metadata?.size_fr !== String(selectedContext.sizeFr) ||
+      lineItem.metadata?.schema_version !== "1" || lineItem.currency !== "eur" ||
+      lineItem.quantity !== selectedContext.quantity ||
+      lineItem.amount_total !== selectedContext.quantity * selectedContext.unitAmount ||
+      lineItem.amount_discount !== 0 || lineItem.amount_tax !== 0) {
+      throw new RefundRouteError(409, "STRIPE_LINE_ITEM_ORDER_MISMATCH");
+    }
   }
 
   return { charge };
@@ -316,21 +379,18 @@ async function validateStripeOrder(
 function refundMetadata(context: RefundContext, operation: RefundOperation) {
   return {
     checkout_session_id: context.stripeCheckoutSessionId,
-    order_line_id: context.orderLineId,
-    stripe_line_item_id: context.stripeLineItemId,
-    catalog_id: context.catalogId,
-    size_fr: String(context.sizeFr),
-    quantity: String(operation.requestedQuantity),
-    schema_version: "1",
+    order_id: context.orderId,
+    schema_version: "3",
     refund_operation_id: operation.id,
   };
 }
 
 function validateStripeRefund(
   refund: Stripe.Refund,
-  context: RefundContext,
+  contexts: RefundContext[],
   operation: RefundOperation,
 ) {
+  const context = contexts[0];
   const expectedMetadata = refundMetadata(context, operation);
 
   if (
@@ -338,8 +398,6 @@ function validateStripeRefund(
     refund.amount !== operation.amount ||
     refund.currency !== "eur" ||
     requirePaymentIntentId(refund.payment_intent) !== context.stripePaymentIntentId ||
-    refund.status === "failed" ||
-    refund.status === "canceled" ||
     Object.entries(expectedMetadata).some(([key, value]) => refund.metadata?.[key] !== value)
   ) {
     throw new RefundRouteError(409, "STRIPE_REFUND_MISMATCH");
@@ -348,11 +406,24 @@ function validateStripeRefund(
   return refund;
 }
 
+function isPermanentStripeCreationError(error: unknown) {
+  if (!(error instanceof Stripe.errors.StripeError)) return false;
+
+  const status = error.statusCode;
+  return (
+    typeof status === "number" &&
+    status >= 400 &&
+    status < 500 &&
+    ![408, 409, 425, 429].includes(status)
+  );
+}
+
 async function findStripeRefundForPendingOperation(
   stripe: Stripe,
-  context: RefundContext,
+  contexts: RefundContext[],
   operation: RefundOperation,
 ) {
+  const context = contexts[0];
   const refunds = await stripe.refunds.list({
     payment_intent: context.stripePaymentIntentId,
     limit: 100,
@@ -366,7 +437,7 @@ async function findStripeRefundForPendingOperation(
   }
 
   return matches[0]
-    ? validateStripeRefund(matches[0], context, operation)
+    ? validateStripeRefund(matches[0], contexts, operation)
     : null;
 }
 
@@ -498,66 +569,59 @@ export async function POST(request: Request) {
       });
     }
 
-    const context = await getRefundContext(db, parsedRequest.orderLineId);
-
-    if (!context) {
-      throw new RefundRouteError(404, "ORDER_LINE_NOT_FOUND");
+    const contexts = await getRefundContexts(
+      db,
+      parsedRequest.lines.map((line) => line.orderLineId),
+    );
+    const existingOperation = parsedRequest.action === "refund"
+      ? await findRefundOperation(db, parsedRequest.operationId)
+      : null;
+    validateSelectedContexts(contexts, parsedRequest.lines, !existingOperation);
+    if (existingOperation) {
+      assertRefundOperationMatches(existingOperation, contexts, parsedRequest.lines);
     }
-
-    validateRefundableContext(context);
-
-    const availableQuantity =
-      context.quantity - context.refundedQuantity - context.reservedRefundQuantity;
-    const refundableAmount = availableQuantity * context.unitAmount;
+    const contextsById = new Map(contexts.map((context) => [context.orderLineId, context]));
+    const requestedAmount = parsedRequest.lines.reduce((total, line) => {
+      const context = contextsById.get(line.orderLineId);
+      if (!context) throw new RefundRouteError(404, "ORDER_LINE_NOT_FOUND");
+      return total + context.unitAmount * line.requestedQuantity;
+    }, 0);
+    const context = contexts[0];
 
     if (parsedRequest.action === "preview") {
       return NextResponse.json({
         ok: true,
         preview: {
-          order_line_id: context.orderLineId,
-          catalog_id: context.catalogId,
-          product_name: CATALOG_NAMES[context.catalogId] ?? context.catalogId,
-          size_fr: context.sizeFr,
-          unit_amount: context.unitAmount,
-          available_quantity: availableQuantity,
-          refundable_amount: refundableAmount,
+          refund_operation_id: crypto.randomUUID(),
+          order_id: context.orderId,
+          amount: requestedAmount,
           currency: context.currency,
+          lines: parsedRequest.lines.map((selection) => {
+            const selectedContext = contextsById.get(selection.orderLineId)!;
+            return {
+              order_line_id: selectedContext.orderLineId,
+              catalog_id: selectedContext.catalogId,
+              product_name: CATALOG_NAMES[selectedContext.catalogId] ?? selectedContext.catalogId,
+              size_fr: selectedContext.sizeFr,
+              unit_amount: selectedContext.unitAmount,
+              requested_quantity: selection.requestedQuantity,
+              amount: selectedContext.unitAmount * selection.requestedQuantity,
+            };
+          }),
         },
       });
     }
-
-    if (parsedRequest.amount % context.unitAmount !== 0) {
-      throw new RefundRouteError(409, "REFUND_AMOUNT_UNAVAILABLE");
-    }
-
-    const requestedQuantity = parsedRequest.amount / context.unitAmount;
-    const existingOperation = await findRefundOperation(
-      db,
-      context.orderLineId,
-      requestedQuantity,
-    );
-
-    if (!existingOperation && parsedRequest.amount > refundableAmount) {
-      throw new RefundRouteError(409, "REFUND_AMOUNT_UNAVAILABLE");
-    }
-
-    if (!existingOperation) {
-      validateD1Context(context, requestedQuantity);
-    } else if (
-      context.orderStatus !== "paid" ||
-      context.currency !== "eur" ||
-      context.schemaVersion !== 1
-    ) {
-      throw new RefundRouteError(409, "ORDER_NOT_REFUNDABLE");
+    if (existingOperation?.status === "failed") {
+      throw new RefundRouteError(409, "REFUND_OPERATION_FAILED");
     }
 
     const stripe = stripeForRefund(env.STRIPE_SECRET_KEY);
-    const { charge } = await validateStripeOrder(stripe, context);
+    const { charge } = await validateStripeOrder(stripe, contexts);
 
     if (existingOperation?.status === "succeeded" && existingOperation.stripeRefundId) {
       const refund = validateStripeRefund(
         await stripe.refunds.retrieve(existingOperation.stripeRefundId),
-        context,
+        contexts,
         existingOperation,
       );
 
@@ -569,28 +633,62 @@ export async function POST(request: Request) {
       });
     }
 
-    const reservation = await reserveRefundOperation(db, context, requestedQuantity);
+    const reservation = await traceAdminRefundStep(
+      "d1.reserveRefundOperation",
+      () =>
+        reserveRefundOperationLines(
+          db,
+          contexts,
+          parsedRequest.lines,
+          parsedRequest.operationId,
+        ),
+    );
     const operation = reservation.operation;
 
     if (reservation.created && charge.amount_refunded + operation.amount > charge.amount) {
+      await failRefundOperationBeforeStripe(db, operation, "STRIPE_REFUND_AMOUNT_UNAVAILABLE");
       throw new RefundRouteError(409, "STRIPE_REFUND_AMOUNT_UNAVAILABLE");
     }
 
-    let refund = await findStripeRefundForPendingOperation(stripe, context, operation);
+    let refund = await findStripeRefundForPendingOperation(stripe, contexts, operation);
 
     if (!refund) {
-      refund = validateStripeRefund(
-        await stripe.refunds.create(
-          {
-            payment_intent: context.stripePaymentIntentId,
+      try {
+        refund = validateStripeRefund(
+          await createAdminStripeRefund(stripe, {
+            paymentIntentId: context.stripePaymentIntentId,
             amount: operation.amount,
             metadata: refundMetadata(context, operation),
-          },
-          { idempotencyKey: operation.stripeIdempotencyKey },
-        ),
-        context,
+            idempotencyKey: operation.stripeIdempotencyKey,
+          }),
+          contexts,
+          operation,
+        );
+      } catch (error) {
+        // A known permanent Stripe 4xx means no Refund was created. Release the
+        // reservation atomically. Network/429/5xx failures keep it reserved so a
+        // retry with the same operation ID and Stripe idempotency key stays safe.
+        if (isPermanentStripeCreationError(error)) {
+          await failRefundOperationBeforeStripe(
+            db,
+            operation,
+            "STRIPE_REFUND_CREATION_PERMANENT_FAILURE",
+          );
+        }
+        throw error;
+      }
+    }
+
+    await attachStripeRefundToOperation(db, operation, refund.id);
+
+    if (refund.status === "failed" || refund.status === "canceled") {
+      await failRefundOperation(
+        db,
         operation,
+        refund.id,
+        `STRIPE_REFUND_${refund.status.toUpperCase()}`,
       );
+      throw new RefundRouteError(409, "STRIPE_REFUND_FAILED");
     }
 
     if (refund.status === "succeeded") {
@@ -600,7 +698,7 @@ export async function POST(request: Request) {
         console.error("REFUND_D1_FINALIZATION_ERROR", {
           refund_operation_id: operation.id,
           stripe_refund_id: refund.id,
-          order_line_id: context.orderLineId,
+          order_line_ids: operation.lines.map((line) => line.orderLineId),
           ...getRefundPersistenceErrorDetails(error),
         });
         return NextResponse.json(
@@ -613,7 +711,7 @@ export async function POST(request: Request) {
     console.log("PARTIAL_REFUND_CREATED", {
       refund_id: refund.id,
       refund_operation_id: operation.id,
-      order_line_id: context.orderLineId,
+      order_line_ids: operation.lines.map((line) => line.orderLineId),
       amount: refund.amount,
       currency: refund.currency,
     });
@@ -630,5 +728,5 @@ export async function POST(request: Request) {
 }
 
 function stripeForRefund(secretKey: string) {
-  return new Stripe(secretKey);
+  return createAdminRefundStripeClient(secretKey);
 }
