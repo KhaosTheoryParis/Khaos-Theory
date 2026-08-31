@@ -82,6 +82,26 @@ export type TranslationDictionary = {
   contact: {
     title: string;
   };
+  legal: {
+    title: string;
+    introduction: string;
+    publisherHeading: string;
+    publisherLabel: string;
+    tradeNameLabel: string;
+    addressLabel: string;
+    sirenLabel: string;
+    siretLabel: string;
+    emailLabel: string;
+    publicationDirectorLabel: string;
+    vatHeading: string;
+    vatStatus: string;
+    hostingHeading: string;
+    hostingIntroduction: string;
+    intellectualPropertyHeading: string;
+    intellectualPropertyText: string;
+    languageHeading: string;
+    languageText: string;
+  };
   metadata: {
     homeTitle: string;
     categoryTitle: string;
@@ -90,6 +110,7 @@ export type TranslationDictionary = {
     successTitle: string;
     aboutTitle: string;
     contactTitle: string;
+    legalTitle: string;
   };
   footer: {
     city: string;
