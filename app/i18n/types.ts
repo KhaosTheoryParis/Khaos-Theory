@@ -92,11 +92,14 @@ export type TranslationDictionary = {
     sirenLabel: string;
     siretLabel: string;
     emailLabel: string;
+    phoneLabel: string;
     publicationDirectorLabel: string;
     vatHeading: string;
     vatStatus: string;
     hostingHeading: string;
     hostingIntroduction: string;
+    mediationHeading: string;
+    mediationIntroduction: string;
     intellectualPropertyHeading: string;
     intellectualPropertyText: string;
     languageHeading: string;

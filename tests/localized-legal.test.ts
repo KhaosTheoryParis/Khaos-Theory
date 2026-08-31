@@ -24,7 +24,9 @@ test("the French and English legal routes render their localized legal notice", 
 });
 
 test("both language versions contain the supplied facts and the approved Cloudflare host", async () => {
-  const html = `${await renderLegal("fr")} ${await renderLegal("en")}`;
+  const frHtml = await renderLegal("fr");
+  const enHtml = await renderLegal("en");
+  const html = `${frHtml} ${enHtml}`;
 
   assert.match(html, /EI - Vincent GÉRARD/);
   assert.match(html, /Khaos Theory/);
@@ -35,6 +37,26 @@ test("both language versions contain the supplied facts and the approved Cloudfl
   assert.match(html, /mailto:contact@khaostheoryparis\.com/);
   assert.match(html, /Cloudflare, Inc\./);
   assert.match(html, /101 Townsend St/);
+  assert.match(frHtml, /01 84 16 47 78/);
+  assert.match(enHtml, /\+33 1 84 16 47 78/);
+  assert.match(html, /href="tel:\+33184164778"/);
+});
+
+test("both language versions identify CM2C and its official referral website", async () => {
+  const frHtml = await renderLegal("fr");
+  const enHtml = await renderLegal("en");
+
+  for (const html of [frHtml, enHtml]) {
+    assert.match(html, /CM2C/);
+    assert.match(html, /Centre de la Médiation de la Consommation de Conciliateurs de Justice/);
+    assert.match(html, /49 Rue de Ponthieu/);
+    assert.match(html, /75008 Paris/);
+    assert.match(html, /href="https:\/\/www\.cm2c\.net\/"/);
+  }
+
+  assert.match(frHtml, /le consommateur peut recourir gratuitement au médiateur de la consommation/);
+  assert.match(enHtml, /consumers may refer their dispute free of charge to the consumer mediator/);
+  assert.match(enHtml, /French version prevails/);
 });
 
 test("localized layout, footer and LanguageSwitcher preserve the legal route", async () => {
@@ -50,14 +72,13 @@ test("localized layout, footer and LanguageSwitcher preserve the legal route", a
   assert.equal(switchLocalizedRoute("/en/legal", "fr"), "/fr/legal");
 });
 
-test("legal notices contain no obsolete, placeholder or invented contact information", async () => {
+test("legal notices contain no obsolete, placeholder or invented identifiers", async () => {
   const html = `${await renderLegal("fr")} ${await renderLegal("en")}`;
 
   assert.doesNotMatch(html, /GitHub Pages/i);
-  assert.doesNotMatch(html, /à compléter/i);
-  assert.doesNotMatch(html, /href="tel:/i);
-  assert.doesNotMatch(html, />\s*(?:Téléphone|Phone)\s*</i);
-  assert.doesNotMatch(html, /médiateur|mediator/i);
+  assert.doesNotMatch(html, /à compléter|to be completed|placeholder/i);
+  assert.doesNotMatch(html, /(?:n°|numéro)\s+(?:d’adhésion|d'adhésion|de convention|de dossier)/i);
+  assert.doesNotMatch(html, /(?:membership|agreement|case)\s+(?:number|reference)/i);
 });
 
 test("legacy legal routes use direct HTTP redirects to the localized French legal notice", () => {

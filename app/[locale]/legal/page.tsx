@@ -12,12 +12,27 @@ const legalIdentity = {
   siren: "928 374 297",
   siret: "928 374 297 00028",
   email: "contact@khaostheoryparis.com",
+  phone: {
+    href: "+33184164778",
+    display: {
+      fr: "01 84 16 47 78",
+      en: "+33 1 84 16 47 78",
+    },
+  },
   publicationDirector: "Vincent GÉRARD",
 } as const;
 
 const hostingProvider = {
   name: "Cloudflare, Inc.",
   address: ["101 Townsend St", "San Francisco, CA 94107", "United States"],
+} as const;
+
+const consumerMediator = {
+  name: "CM2C",
+  fullName: "Centre de la Médiation de la Consommation de Conciliateurs de Justice",
+  address: ["49 Rue de Ponthieu", "75008 Paris", "France"],
+  website: "https://www.cm2c.net/",
+  websiteLabel: "www.cm2c.net",
 } as const;
 
 type LocalizedLegalPageProps = {
@@ -54,9 +69,10 @@ export default async function LocalizedLegalPage({ params }: LocalizedLegalPageP
               <strong>{dictionary.legal.siretLabel} :</strong> {legalIdentity.siret}<br />
               <strong>{dictionary.legal.emailLabel} :</strong>{" "}
               <a href={`mailto:${legalIdentity.email}`}>{legalIdentity.email}</a><br />
+              <strong>{dictionary.legal.phoneLabel} :</strong>{" "}
+              <a href={`tel:${legalIdentity.phone.href}`}>{legalIdentity.phone.display[locale]}</a><br />
               <strong>{dictionary.legal.publicationDirectorLabel} :</strong> {legalIdentity.publicationDirector}
             </p>
-            {/* TODO(legal): Add a verified professional telephone number before final commercial launch if legally required. */}
 
             <h2>{dictionary.legal.vatHeading}</h2>
             <p>{dictionary.legal.vatStatus}</p>
@@ -66,6 +82,14 @@ export default async function LocalizedLegalPage({ params }: LocalizedLegalPageP
               {dictionary.legal.hostingIntroduction}<br />
               {hostingProvider.name}<br />
               {hostingProvider.address.map((line) => <span key={line}>{line}<br /></span>)}
+            </p>
+
+            <h2>{dictionary.legal.mediationHeading}</h2>
+            <p>{dictionary.legal.mediationIntroduction}</p>
+            <p>
+              <strong>{consumerMediator.name}</strong> – {consumerMediator.fullName}<br />
+              {consumerMediator.address.map((line) => <span key={line}>{line}<br /></span>)}
+              <a href={consumerMediator.website}>{consumerMediator.websiteLabel}</a>
             </p>
 
             <h2>{dictionary.legal.intellectualPropertyHeading}</h2>
