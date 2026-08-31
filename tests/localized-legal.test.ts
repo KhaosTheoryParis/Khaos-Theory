@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import LocalizedLegalPage from "../app/[locale]/legal/page";
@@ -51,8 +51,7 @@ test("localized layout, footer and LanguageSwitcher preserve the legal route", a
 });
 
 test("legal notices contain no obsolete, placeholder or invented contact information", async () => {
-  const legacyHtml = readFileSync("public/legal.html", "utf8");
-  const html = `${await renderLegal("fr")} ${await renderLegal("en")} ${legacyHtml}`;
+  const html = `${await renderLegal("fr")} ${await renderLegal("en")}`;
 
   assert.doesNotMatch(html, /GitHub Pages/i);
   assert.doesNotMatch(html, /à compléter/i);
@@ -61,14 +60,13 @@ test("legal notices contain no obsolete, placeholder or invented contact informa
   assert.doesNotMatch(html, /médiateur|mediator/i);
 });
 
-test("legacy legal routes lead only to the localized French legal notice", () => {
+test("legacy legal routes use direct HTTP redirects to the localized French legal notice", () => {
   const response = redirectLegacyLegal();
-  const legacyHtml = readFileSync("public/legal.html", "utf8");
+  const redirects = readFileSync("public/_redirects", "utf8");
 
   assert.equal(response.status, 308);
   assert.equal(response.headers.get("location"), "/fr/legal");
-  assert.match(legacyHtml, /http-equiv="refresh" content="0; url=\/fr\/legal"/);
-  assert.match(legacyHtml, /window\.location\.replace\("\/fr\/legal"\)/);
-  assert.match(legacyHtml, /href="\/fr\/legal"/);
-  assert.doesNotMatch(legacyHtml, /url=\/legal(?:\.html)?/);
+  assert.match(redirects, /^\/legal\s+\/fr\/legal\s+308$/m);
+  assert.match(redirects, /^\/legal\.html\s+\/fr\/legal\s+308$/m);
+  assert.equal(existsSync("public/legal.html"), false);
 });
