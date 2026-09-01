@@ -17,6 +17,11 @@ export type TranslationDictionary = {
     home: string;
     legalNotice: string;
   };
+  notFound: {
+    title: string;
+    message: string;
+    returnHome: string;
+  };
   home: {
     constructionTitle: string;
     constructionMessage: string;

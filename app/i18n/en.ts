@@ -19,6 +19,11 @@ export const en = {
     home: "Home",
     legalNotice: "Legal notice",
   },
+  notFound: {
+    title: "Page not found",
+    message: "This page could not be found or is no longer available.",
+    returnHome: "RETURN HOME",
+  },
   home: {
     constructionTitle: "Website under Konstruction",
     constructionMessage: "Online payments are not available yet.",

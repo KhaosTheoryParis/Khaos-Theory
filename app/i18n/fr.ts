@@ -19,6 +19,11 @@ export const fr = {
     home: "Accueil",
     legalNotice: "Mentions légales",
   },
+  notFound: {
+    title: "Page introuvable",
+    message: "Cette page est introuvable ou n’est plus disponible.",
+    returnHome: "RETOUR À L’ACCUEIL",
+  },
   home: {
     constructionTitle: "Site en Konstruction",
     constructionMessage: "Les paiements en ligne ne sont pas encore disponibles.",

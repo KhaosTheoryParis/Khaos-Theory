@@ -123,6 +123,69 @@
   font-weight: 300;
 }
 
+.localized-public.localized-not-found-page {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.localized-public .not-found-main {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 150px 50px 80px;
+}
+
+.localized-public .not-found-panel {
+  width: min(100%, 580px);
+  padding: clamp(32px, 6vw, 64px);
+  border: 1px solid #222;
+  text-align: center;
+}
+
+.localized-public .not-found-status {
+  margin-bottom: 16px;
+  color: #aaa;
+  font-size: clamp(15px, 2vw, 19px);
+  letter-spacing: 0.22em;
+}
+
+.localized-public .not-found-panel .section-title {
+  margin: 0;
+  font-size: clamp(34px, 7vw, 54px);
+  overflow-wrap: anywhere;
+}
+
+.localized-public .not-found-message {
+  max-width: 390px;
+  margin: 20px auto 0;
+  color: #c8c8c8;
+  font-size: clamp(17px, 3vw, 21px);
+  line-height: 1.35;
+}
+
+.localized-public .not-found-home-link {
+  min-height: 44px;
+  margin-top: 32px;
+  padding: 12px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #f2f2f2;
+  border: 1px solid #666;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.localized-public .not-found-home-link:hover,
+.localized-public .not-found-home-link:focus-visible {
+  color: #050505;
+  background: #fff;
+}
+
 .localized-home-title {
   position: absolute;
   width: 1px;
@@ -312,6 +375,14 @@
 }
 
 @media (max-width: 700px) {
+  .localized-public .not-found-main {
+    padding: 130px 16px 56px;
+  }
+
+  .localized-public .not-found-panel {
+    padding: 32px 20px;
+  }
+
   .localized-public .shipping-address,
   .localized-public .stripe-element-section {
     padding: 20px 16px;
