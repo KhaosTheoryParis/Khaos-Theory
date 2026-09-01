@@ -291,6 +291,14 @@ test("migrations 0001 through 0010 produce an intact schema with the shipping tr
   ]);
 });
 
+test("migration 0010 uses D1-compatible wrapped CASE guards", () => {
+  const migration = readFileSync("migrations/0010_add_shipping_refunds.sql", "utf8");
+  const wrappedCaseGuards = migration.match(/SELECT\s*\(\s*CASE[\s\S]*?END\s*\);/gu) ?? [];
+
+  assert.equal(wrappedCaseGuards.length, 3);
+  assert.doesNotMatch(migration, /SELECT\s+CASE\b/u);
+});
+
 test("migration 0010 preserves historical orders with NULL shipping state", () => {
   const sqlite = database(8);
   const orderId = insertHistoricalOrder(sqlite, 1);

@@ -24,7 +24,8 @@ BEFORE INSERT ON refund_operations
 FOR EACH ROW
 WHEN COALESCE(NEW.shipping_refund_amount, 0) > 0
 BEGIN
-  SELECT CASE
+  SELECT (
+    CASE
     WHEN NOT EXISTS (
       SELECT 1
       FROM orders
@@ -36,7 +37,8 @@ BEGIN
           + NEW.shipping_refund_amount <= shipping_amount
     )
     THEN RAISE(ABORT, 'SHIPPING_REFUND_AMOUNT_UNAVAILABLE')
-  END;
+    END
+  );
 
   UPDATE orders
   SET reserved_shipping_refund_amount =
@@ -52,7 +54,8 @@ BEFORE UPDATE OF status ON refund_operations
 FOR EACH ROW
 WHEN OLD.status = 'pending' AND NEW.status = 'succeeded'
 BEGIN
-  SELECT CASE
+  SELECT (
+    CASE
     WHEN NEW.stripe_refund_id IS NULL
       OR (
         NOT EXISTS (
@@ -92,7 +95,8 @@ BEGIN
         )
       )
     THEN RAISE(ABORT, 'REFUND_FINALIZATION_CONFLICT')
-  END;
+    END
+  );
 
   UPDATE order_lines
   SET refunded_quantity = refunded_quantity + (
@@ -131,7 +135,8 @@ BEFORE UPDATE OF status ON refund_operations
 FOR EACH ROW
 WHEN OLD.status = 'pending' AND NEW.status = 'failed'
 BEGIN
-  SELECT CASE
+  SELECT (
+    CASE
     WHEN (
         NOT EXISTS (
           SELECT 1 FROM refund_operation_lines
@@ -160,7 +165,8 @@ BEGIN
         )
       )
     THEN RAISE(ABORT, 'REFUND_FAILURE_RELEASE_CONFLICT')
-  END;
+    END
+  );
 
   UPDATE order_lines
   SET reserved_refund_quantity = reserved_refund_quantity - (
