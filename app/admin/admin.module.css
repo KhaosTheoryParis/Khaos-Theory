@@ -1,19 +1,25 @@
 .main {
   min-height: 100vh;
-  padding: 64px 24px;
+  padding: 72px 24px;
   display: flex;
   justify-content: center;
   background: #050505;
   color: #f2f2f2;
-  font-family: Arial, sans-serif;
+  font-family: "Helvetica Neue", Arial, sans-serif;
 }
 
 .panel {
   width: min(1180px, 100%);
+  padding: clamp(28px, 5vw, 56px);
+  background: linear-gradient(145deg, #0d0d0d 0%, #090909 58%, #060606 100%);
+  border: 1px solid #262626;
+  box-shadow: 0 24px 72px rgb(0 0 0 / 0.3);
 }
 
 .header {
   margin-bottom: 48px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid #333;
 }
 
 .header h1,
@@ -21,11 +27,25 @@
 .refundSection h2 {
   margin: 0;
   font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
 .header p,
 .sandboxNotice {
   color: #999;
+}
+
+.header h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.header p {
+  margin: 10px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .refundSection {
@@ -107,6 +127,20 @@
   border: 1px solid #444;
   border-radius: 0;
   font: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.analyticsControls input:focus-visible,
+.analyticsControls select:focus-visible,
+.orderFilters input:focus-visible,
+.orderFilters select:focus-visible,
+.form input:focus-visible,
+.quantityLabel select:focus-visible,
+.lineSelection input:focus-visible,
+.confirmation input:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+  border-color: #f2f2f2;
 }
 
 .activePeriod {
@@ -167,6 +201,12 @@
   gap: 8px;
   background: #0d0d0d;
   border: 1px solid #333;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.analyticsTotals article:hover {
+  border-color: #555;
+  transform: translateY(-1px);
 }
 
 .analyticsTotals span {
@@ -202,6 +242,7 @@
 }
 
 .salesTable th {
+  background: #0d0d0d;
   color: #999;
   font-size: 11px;
   font-weight: 500;
@@ -218,6 +259,11 @@
   letter-spacing: inherit;
   text-transform: inherit;
   cursor: pointer;
+}
+
+.salesTable th button:hover,
+.salesTable th button:focus-visible {
+  color: #f2f2f2;
 }
 
 .salesTable th button span {
@@ -300,6 +346,7 @@
   border: 1px solid #f2f2f2;
   font: inherit;
   cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
 .filterActions .secondaryButton,
@@ -307,6 +354,20 @@
   color: #f2f2f2;
   background: transparent;
   border-color: #555;
+}
+
+.filterActions button:not(:disabled):hover,
+.filterActions button:not(:disabled):focus-visible,
+.pagination button:not(:disabled):hover,
+.pagination button:not(:disabled):focus-visible {
+  transform: translateY(-1px);
+}
+
+.filterActions .secondaryButton:not(:disabled):hover,
+.filterActions .secondaryButton:not(:disabled):focus-visible,
+.pagination button:not(:disabled):hover,
+.pagination button:not(:disabled):focus-visible {
+  border-color: #f2f2f2;
 }
 
 .filterActions button:disabled,
@@ -343,6 +404,7 @@
 }
 
 .ordersTable th {
+  background: #0d0d0d;
   color: #999;
   font-size: 11px;
   font-weight: 500;
@@ -352,6 +414,14 @@
 
 .ordersTable tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.ordersTable tbody tr {
+  transition: background 0.2s ease;
+}
+
+.ordersTable tbody tr:hover {
+  background: #121212;
 }
 
 .ordersTable code {
@@ -382,6 +452,7 @@
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .emptyState {
@@ -440,6 +511,7 @@
   background: #111;
   border: 1px solid #444;
   font: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .form button,
@@ -452,6 +524,16 @@
   border: 1px solid #f2f2f2;
   font: inherit;
   cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.form button:not(:disabled):hover,
+.form button:not(:disabled):focus-visible,
+.confirmButton:not(:disabled):hover,
+.confirmButton:not(:disabled):focus-visible {
+  color: #f2f2f2;
+  background: transparent;
+  transform: translateY(-1px);
 }
 
 .form button:disabled,
@@ -487,10 +569,12 @@
   padding: 18px;
   background: #0d0d0d;
   border: 1px solid #333;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .selectedLine {
   border-color: #f2f2f2;
+  background: #121212;
 }
 
 .lineCard h4,
@@ -537,6 +621,12 @@
   border: 1px solid #555;
   font: inherit;
   cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.lineCard button:not(:disabled):hover,
+.lineCard button:not(:disabled):focus-visible {
+  border-color: #f2f2f2;
 }
 
 .lineCard button:disabled {
@@ -610,6 +700,7 @@
   padding: 22px;
   background: #101010;
   border: 1px solid #333;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
 }
 
 .review dl {
@@ -668,6 +759,10 @@
 @media (max-width: 800px) {
   .main {
     padding: 36px 16px;
+  }
+
+  .panel {
+    padding: 28px 20px;
   }
 
   .header {

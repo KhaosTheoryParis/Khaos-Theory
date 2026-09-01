@@ -15,14 +15,14 @@ export type HistoricalCartItem = {
 function toHistoricalCartItem(value: unknown): HistoricalCartItem | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
+  const size = normalizeHistoricalSize(item.size);
   if (
     typeof item.key !== "string"
     || typeof item.productId !== "string"
     || typeof item.name !== "string"
     || typeof item.price !== "number"
     || !Number.isFinite(item.price)
-    || typeof item.size !== "number"
-    || !Number.isInteger(item.size)
+    || size === null
     || typeof item.usSize !== "string"
     || typeof item.quantity !== "number"
     || !Number.isInteger(item.quantity)
@@ -33,10 +33,20 @@ function toHistoricalCartItem(value: unknown): HistoricalCartItem | null {
     productId: item.productId,
     name: item.name,
     price: item.price,
-    size: item.size,
+    size,
     usSize: item.usSize,
     quantity: item.quantity,
   };
+}
+
+function normalizeHistoricalSize(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 48 && value <= 70) {
+    return value;
+  }
+  if (typeof value === "string" && /^(?:4[8-9]|[5-6][0-9]|70)$/u.test(value)) {
+    return Number(value);
+  }
+  return null;
 }
 
 type ProductForHistoricalCart = {

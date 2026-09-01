@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -31,7 +32,7 @@ test("the English localized home renders English dictionary content and a workin
   assert.match(html, new RegExp(en.home.tagline));
   assert.match(html, /href="\/en\/#home"/);
   assert.match(html, /href="\/fr"/);
-  assert.match(html, /aria-current="page"[^>]*>English/);
+  assert.match(html, /aria-current="page"[^>]*>[\s\S]*?<span>English<\/span>/);
   assert.match(html, /href="\/en\/contact"/);
   assert.doesNotMatch(html, /href="\/contact\.html"/);
 });
@@ -65,4 +66,27 @@ test("the shared header uses semantic navigation, a native collection disclosure
   assert.match(html, /href="\/fr\/about"/);
   assert.match(html, /href="\/fr\/contact"/);
   assert.match(html, /href="\/fr\/checkout"/);
+  assert.match(html, /class="localized-header-bar"/);
+  assert.match(html, /<details class="language-menu">/);
+  assert.match(html, /🇫🇷/);
+  assert.match(html, />FR<\/span>/);
+  assert.match(html, /🇬🇧/);
+  assert.match(html, /href="\/en" lang="en">/);
+});
+
+test("localized public styles keep the header, product details and kart controls compact on narrow screens", () => {
+  const css = readFileSync("app/[locale]/localized-home.css", "utf8");
+
+  assert.match(css, /@media \(min-width: 701px\) and \(max-width: 900px\)/);
+  assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.localized-public \.product-overlay[\s\S]*?opacity: 1/);
+  assert.match(css, /@media \(max-width: 420px\)[\s\S]*?grid-template-areas:[\s\S]*?"details remove"/);
+});
+
+test("localized public styles retain visible focus, readable disabled states and reduced-motion support", () => {
+  const css = readFileSync("app/[locale]/localized-home.css", "utf8");
+
+  assert.match(css, /\.localized-public a:focus-visible,[\s\S]*?\.localized-public select:focus-visible/);
+  assert.match(css, /\.localized-public footer \{\s*color: #aaa;/);
+  assert.match(css, /\.localized-public \.stripe-checkout-button:disabled \{[\s\S]*?opacity: 0\.6;/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });

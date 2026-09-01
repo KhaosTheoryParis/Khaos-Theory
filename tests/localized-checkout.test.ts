@@ -88,14 +88,32 @@ test("the localized checkout adds only its validated locale to the existing item
   });
   assert.deepEqual(Object.keys(localizedCheckoutSessionPayload(cart, "fr")).sort(), ["items", "locale"]);
 
-  const routeSource = readFileSync("app/api/create-checkout-session/route.ts", "utf8");
-  assert.match(routeSource, /type CartItem = \{ productId\?: unknown; size\?: unknown; quantity\?: unknown \};/);
-  assert.match(routeSource, /if \(!product \|\| !Number\.isInteger\(quantity\) \|\| quantity < 1 \|\| quantity > 5/);
-  assert.match(routeSource, /success_url: redirectUrls\.successUrl/);
-  assert.match(routeSource, /cancel_url: redirectUrls\.cancelUrl/);
+  const httpSource = readFileSync("app/services/checkout-elements-http.ts", "utf8");
+  const catalogSource = readFileSync("app/services/checkout-catalog.ts", "utf8");
+  const elementsSource = readFileSync("app/services/stripe-checkout-elements.ts", "utf8");
+  assert.match(catalogSource, /type ValidatedCheckoutItem/);
+  assert.match(catalogSource, /quantity < 1[\s\S]*quantity > CHECKOUT_MAX_QUANTITY/);
+  assert.match(elementsSource, /ui_mode: "elements"/);
+  assert.match(elementsSource, /return_url: checkoutElementsReturnUrl/);
+  assert.doesNotMatch(elementsSource, /success_url:|cancel_url:/);
+  assert.match(httpSource, /prepareCheckoutElementsCart\(parsedBody\.body\.items/);
 });
 
 test("the checkout LanguageSwitcher preserves the cart and swaps only the localized route", () => {
   assert.equal(switchLocalizedRoute("/fr/checkout", "en"), "/en/checkout");
   assert.equal(switchLocalizedRoute("/en/checkout", "fr"), "/fr/checkout");
+});
+
+test("French and English preserve complete Checkout and Legal dictionary parity", () => {
+  assert.deepEqual(Object.keys(fr.checkout).sort(), Object.keys(en.checkout).sort());
+  assert.deepEqual(Object.keys(fr.legal).sort(), Object.keys(en.legal).sort());
+});
+
+test("checkout keeps its cart on a local persistence failure and exposes only a recoverable message", () => {
+  const source = readFileSync("app/public/checkout-client.tsx", "utf8");
+
+  assert.match(source, /try \{\s*writeHistoricalCart\(window\.localStorage, nextCart\);/);
+  assert.match(source, /setCartError\(dictionary\.checkout\.cartUpdateError\)/);
+  assert.match(source, /checkout-status checkout-status--error" role="alert"/);
+  assert.match(source, /if \(cart\.length === 0\)[\s\S]*?continueShopping/);
 });

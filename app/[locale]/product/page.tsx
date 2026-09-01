@@ -6,6 +6,7 @@ import { getPublicProduct } from "../../public/home-catalog";
 import ProductDetail from "../../public/product-detail";
 import PublicFooter from "../../public/public-footer";
 import PublicHeader from "../../public/public-header";
+import { localizedPublicMetadata } from "../../public/public-seo";
 
 type LocalizedProductPageProps = {
   params: Promise<{ locale: string }>;
@@ -23,8 +24,15 @@ async function getLocalizedProduct({ params, searchParams }: LocalizedProductPag
 }
 
 export async function generateMetadata(props: LocalizedProductPageProps): Promise<Metadata> {
-  const { dictionary, product } = await getLocalizedProduct(props);
-  return { title: dictionary.metadata.productTitle.replace("{product}", dictionary.home.products[product.id].name) };
+  const { locale, dictionary, product } = await getLocalizedProduct(props);
+  const productName = dictionary.home.products[product.id].name;
+  return localizedPublicMetadata({
+    locale,
+    route: "product",
+    options: { query: { item: product.id } },
+    title: dictionary.metadata.productTitle.replace("{product}", productName),
+    description: dictionary.metadata.productDescription.replace("{product}", productName),
+  });
 }
 
 export default async function LocalizedProductPage(props: LocalizedProductPageProps) {

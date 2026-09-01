@@ -17,9 +17,11 @@ import {
   findRefundOperationById,
   getRefundOperationContexts,
   getRefundPersistenceErrorDetails,
+  getRefundShippingContext,
   recordPennylaneCreditNote,
   type RefundContext,
   type RefundOperation,
+  type RefundShippingContext,
 } from "./refunds";
 
 export type WebhookTrace = (
@@ -72,12 +74,13 @@ export function createWebhookTrace(requestStartedAt: number, requestId: string):
 
 async function createPennylaneInvoice(
   stripe: Stripe,
-  sessionId: string,
+  session: Stripe.Checkout.Session,
   token: string | undefined,
   db: OrdersDatabase | undefined,
   event: Stripe.Event,
   trace: WebhookTrace,
 ) {
+  const sessionId = session.id;
   trace("create_pennylane_invoice", "start", event);
   let processingErrorCode: string | null = null;
 
@@ -180,6 +183,7 @@ async function createPennylaneInvoice(
             customerEmail: result.customerEmail,
             currency: result.currency,
             amountTotal: result.amount,
+            shipping: result.shipping,
             status: "paid",
             schemaVersion: 1,
             createdAt: result.createdAt,
@@ -350,24 +354,31 @@ function validateRefundMapping(
   refund: Stripe.Refund,
   operation: RefundOperation,
   contexts: RefundContext[],
+  orderContext: RefundContext | RefundShippingContext,
 ) {
   const metadata = refund.metadata ?? {};
-  const context = contexts[0];
+  const productContext = contexts[0];
   const legacy = metadata.schema_version === "1";
-  if (legacy && operation.lines.length !== 1) throw new Error("STRIPE_REFUND_D1_MAPPING_MISMATCH");
+  if (legacy && (operation.lines.length !== 1 || !productContext)) {
+    throw new Error("STRIPE_REFUND_D1_MAPPING_MISMATCH");
+  }
   const legacyQuantity = legacy ? requirePositiveIntegerMetadata(metadata.quantity) : null;
-  const operationAmount = operation.lines.reduce((total, line) => total + line.amount, 0);
+  const operationAmount = operation.lines.reduce(
+    (total, line) => total + line.amount,
+    operation.shippingRefundAmount ?? 0,
+  );
   if (
     metadata.refund_operation_id !== operation.id ||
-    metadata.checkout_session_id !== context.stripeCheckoutSessionId ||
-    (legacy && (metadata.order_line_id !== context.orderLineId ||
-      metadata.stripe_line_item_id !== context.stripeLineItemId ||
-      metadata.catalog_id !== context.catalogId || metadata.size_fr !== String(context.sizeFr) ||
+    metadata.checkout_session_id !== orderContext.stripeCheckoutSessionId ||
+    (legacy && (metadata.order_line_id !== productContext?.orderLineId ||
+      metadata.stripe_line_item_id !== productContext?.stripeLineItemId ||
+      metadata.catalog_id !== productContext?.catalogId ||
+      metadata.size_fr !== String(productContext?.sizeFr) ||
       legacyQuantity !== operation.lines[0].requestedQuantity)) ||
     (!legacy && (metadata.schema_version !== "3" || metadata.order_id !== operation.orderId)) ||
     refund.amount !== operationAmount || refund.amount !== operation.amount ||
-    refund.currency !== context.currency ||
-    requireStripeReference(refund.payment_intent, "pi_") !== context.stripePaymentIntentId ||
+    refund.currency !== orderContext.currency ||
+    requireStripeReference(refund.payment_intent, "pi_") !== orderContext.stripePaymentIntentId ||
     (operation.stripeRefundId !== null && operation.stripeRefundId !== refund.id)
   ) {
     throw new Error("STRIPE_REFUND_D1_MAPPING_MISMATCH");
@@ -380,41 +391,41 @@ async function verifyStructuredRefundWithStripe(
   refund: Stripe.Refund,
   contexts: RefundContext[],
   operation: RefundOperation,
+  orderContext: RefundContext | RefundShippingContext,
 ) {
-  const context = contexts[0];
-  const paymentIntent = await stripe.paymentIntents.retrieve(context.stripePaymentIntentId);
+  const paymentIntent = await stripe.paymentIntents.retrieve(orderContext.stripePaymentIntentId);
   const chargeId = requireStripeReference(paymentIntent.latest_charge, "ch_");
 
   if (
     paymentIntent.status !== "succeeded" ||
-    paymentIntent.currency !== context.currency ||
-    paymentIntent.amount !== context.amountTotal ||
-    paymentIntent.amount_received !== context.amountTotal
+    paymentIntent.currency !== orderContext.currency ||
+    paymentIntent.amount !== orderContext.amountTotal ||
+    paymentIntent.amount_received !== orderContext.amountTotal
   ) {
     throw new Error("STRIPE_REFUND_PAYMENT_INTENT_MISMATCH");
   }
 
-  const session = await stripe.checkout.sessions.retrieve(context.stripeCheckoutSessionId);
+  const session = await stripe.checkout.sessions.retrieve(orderContext.stripeCheckoutSessionId);
   if (
     session.payment_status !== "paid" ||
-    session.currency !== context.currency ||
-    session.amount_total !== context.amountTotal ||
-    requireStripeReference(session.payment_intent, "pi_") !== context.stripePaymentIntentId
+    session.currency !== orderContext.currency ||
+    session.amount_total !== orderContext.amountTotal ||
+    requireStripeReference(session.payment_intent, "pi_") !== orderContext.stripePaymentIntentId
   ) {
     throw new Error("STRIPE_REFUND_CHECKOUT_SESSION_MISMATCH");
   }
 
   const charge = await stripe.charges.retrieve(chargeId);
   if (
-    charge.currency !== context.currency ||
-    charge.amount !== context.amountTotal ||
-    requireStripeReference(charge.payment_intent, "pi_") !== context.stripePaymentIntentId
+    charge.currency !== orderContext.currency ||
+    charge.amount !== orderContext.amountTotal ||
+    requireStripeReference(charge.payment_intent, "pi_") !== orderContext.stripePaymentIntentId
   ) {
     throw new Error("STRIPE_REFUND_CHARGE_MISMATCH");
   }
 
   const lineItems = await stripe.checkout.sessions
-    .listLineItems(context.stripeCheckoutSessionId, { limit: 100 })
+    .listLineItems(orderContext.stripeCheckoutSessionId, { limit: 100 })
     .autoPagingToArray({ limit: 1_000 });
   const operationLines = new Map(operation.lines.map((line) => [line.orderLineId, line]));
   for (const selectedContext of contexts) {
@@ -440,6 +451,7 @@ type StructuredRefundDependencies = {
   retrieveRefund?: (stripe: Stripe, refundId: string) => Promise<Stripe.Refund>;
   findOperation?: typeof findRefundOperationById;
   getContexts?: typeof getRefundOperationContexts;
+  getShippingContext?: typeof getRefundShippingContext;
   verifyWithStripe?: typeof verifyStructuredRefundWithStripe;
   attachRefund?: typeof attachStripeRefundToOperation;
   finalizeOperation?: typeof finalizeRefundOperation;
@@ -514,11 +526,14 @@ export async function processStructuredRefundEvent({
     );
     if (!operation) throw new Error("REFUND_OPERATION_NOT_FOUND");
     const contexts = await (dependencies.getContexts ?? getRefundOperationContexts)(db, operation);
-    if (contexts.length !== operation.lines.length || contexts.length === 0) {
+    if (contexts.length !== operation.lines.length) {
       throw new Error("ORDER_LINE_NOT_FOUND");
     }
-    const context = contexts[0];
-    validateRefundMapping(refund, operation, contexts);
+    const orderContext = contexts[0] ?? await (
+      dependencies.getShippingContext ?? getRefundShippingContext
+    )(db, operation.orderId);
+    if (!orderContext) throw new Error("ORDER_NOT_FOUND");
+    validateRefundMapping(refund, operation, contexts, orderContext);
 
     await (dependencies.attachRefund ?? attachStripeRefundToOperation)(
       db,
@@ -561,6 +576,7 @@ export async function processStructuredRefundEvent({
       refund,
       contexts,
       operation,
+      orderContext,
     );
     if (operation.status === "pending") {
       await (dependencies.finalizeOperation ?? finalizeRefundOperation)(
@@ -577,9 +593,9 @@ export async function processStructuredRefundEvent({
       token: pennylaneToken,
       refundId: refund.id,
       refundCreated: eventCreated,
-      paymentIntentId: context.stripePaymentIntentId,
-      checkoutSessionId: context.stripeCheckoutSessionId,
-      invoiceId: context.pennylaneInvoiceId,
+      paymentIntentId: orderContext.stripePaymentIntentId,
+      checkoutSessionId: orderContext.stripeCheckoutSessionId,
+      invoiceId: orderContext.pennylaneInvoiceId,
       lines: operation.lines.map((line) => {
         const lineContext = contextById.get(line.orderLineId);
         if (!lineContext) throw new Error("ORDER_LINE_NOT_FOUND");
@@ -590,10 +606,12 @@ export async function processStructuredRefundEvent({
           unitAmount: line.unitAmount,
         };
       }),
+      shippingRefundAmount: operation.shippingRefundAmount ?? 0,
+      shippingAmountPaid: orderContext.shippingAmount ?? null,
       refundAmount: refund.amount,
-      invoiceAmountTotal: context.amountTotal,
-      currency: context.currency,
-      customerEmail: context.customerEmail,
+      invoiceAmountTotal: orderContext.amountTotal,
+      currency: orderContext.currency,
+      customerEmail: orderContext.customerEmail,
     });
 
     await (dependencies.recordCreditNote ?? recordPennylaneCreditNote)(
@@ -604,7 +622,7 @@ export async function processStructuredRefundEvent({
     const details = {
       stripe_refund_id: refund.id,
       refund_operation_id: operation.id,
-      stripe_payment_intent_id: context.stripePaymentIntentId,
+      stripe_payment_intent_id: orderContext.stripePaymentIntentId,
       pennylane_invoice_id: result.invoiceId,
       pennylane_credit_note_id: result.creditNoteId,
       order_line_ids: operation.lines.map((line) => line.orderLineId),
@@ -626,7 +644,7 @@ export async function processStructuredRefundEvent({
         pennylane_invoice_id: result.invoiceId,
         stripe_refund_id: refund.id,
         refund_operation_id: operation.id,
-        customer_email: context.customerEmail,
+        customer_email: orderContext.customerEmail,
       });
     } else if (result.status === "created" && result.email.status === "error") {
       const emailError = result.email.error;
@@ -706,7 +724,7 @@ export async function processStripeEvent({
 
         const outcome = await createPennylaneInvoice(
           stripe,
-          session.id,
+          session,
           pennylaneToken,
           env.DB,
           event,
@@ -818,6 +836,16 @@ export async function processStripeEvent({
       }
 
       const hasStructuredRefund = refunds.some(isStructuredKhaosRefund);
+      const hasExternalRefund = refunds.some((refund) => !isStructuredKhaosRefund(refund));
+
+      if (hasStructuredRefund && hasExternalRefund) {
+        console.error("unsupported_external_refund", {
+          stripe_charge_id: charge.id,
+          code: "UNSUPPORTED_EXTERNAL_REFUND",
+          mixed_with_structured_refund: true,
+        });
+        throw new Error("UNSUPPORTED_EXTERNAL_REFUND");
+      }
 
       if (hasStructuredRefund) {
         console.log("STRUCTURED_REFUND_HANDLED_BY_REFUND_CREATED", {

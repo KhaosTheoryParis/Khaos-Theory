@@ -182,6 +182,17 @@ test("refund.updated is supported and external refunds require manual interventi
   });
 });
 
+test("an unsupported shipping country is permanent while a network error remains transient", () => {
+  assert.deepEqual(classifyStripeQueueError(new Error("UNSUPPORTED_SHIPPING_COUNTRY")), {
+    code: "UNSUPPORTED_SHIPPING_COUNTRY",
+    disposition: "permanent",
+  });
+  assert.deepEqual(classifyStripeQueueError(new Error("STRIPE_NETWORK_ERROR")), {
+    code: "STRIPE_NETWORK_ERROR",
+    disposition: "transient",
+  });
+});
+
 for (const httpStatus of [400, 401, 403, 422]) {
   test(`an HTTP ${httpStatus} processing error remains structured and permanent`, () => {
     const error = new StripeEventProcessingError({

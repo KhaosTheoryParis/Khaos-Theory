@@ -9,6 +9,8 @@ export type RefundContext = {
   stripePaymentIntentId: string; amountTotal: number; currency: string;
   orderStatus: string; schemaVersion: number; pennylaneInvoiceId: string;
   pennylaneInvoiceLineId: string; customerEmail: string;
+  shippingAmount?: number | null; shippingRefundedAmount?: number | null;
+  reservedShippingRefundAmount?: number | null;
 };
 
 export type RefundOperationLine = {
@@ -21,9 +23,10 @@ export type RefundOperation = {
   stripeIdempotencyKey: string; stripeRefundId: string | null;
   status: "pending" | "succeeded" | "failed"; failureCode: string | null;
   pennylaneCreditNoteId: string | null; creditNoteStatus: "pending" | "finalized";
+  shippingRefundAmount?: number;
   lines: RefundOperationLine[];
   /** Compatibility aliases for historical single-line callers. */
-  orderLineId: string; requestedQuantity: number; refundedQuantityBefore: number;
+  orderLineId: string | null; requestedQuantity: number; refundedQuantityBefore: number;
 };
 
 export type RefundSelection = { orderLineId: string; requestedQuantity: number };
@@ -31,6 +34,9 @@ export type RefundSelection = { orderLineId: string; requestedQuantity: number }
 export type RefundOrderSearchResult = {
   id: string; stripeCheckoutSessionId: string; stripePaymentIntentId: string;
   amountTotal: number; currency: string; status: string; schemaVersion: number;
+  productsSubtotal: number | null; shippingAmount: number | null;
+  shippingCountry: string | null; shippingZone: string | null;
+  shippingRefundedAmount: number | null; reservedShippingRefundAmount: number | null;
   lines: Array<{
     orderLineId: string; catalogId: string; sizeFr: number; quantity: number;
     unitAmount: number; refundedQuantity: number; reservedRefundQuantity: number;
@@ -44,12 +50,15 @@ type RefundContextRow = {
   stripe_checkout_session_id: string; stripe_payment_intent_id: string;
   amount_total: number; currency: string; order_status: string; schema_version: number;
   pennylane_invoice_id: string; pennylane_invoice_line_id: string; customer_email: string;
+  shipping_amount: number | null; shipping_refunded_amount: number | null;
+  reserved_shipping_refund_amount: number | null;
 };
 type RefundOperationRow = {
   id: string; order_id: string; amount: number; currency: string;
   stripe_idempotency_key: string; stripe_refund_id: string | null;
   status: "pending" | "succeeded" | "failed"; failure_code: string | null;
   pennylane_credit_note_id: string | null; credit_note_status: "pending" | "finalized";
+  shipping_refund_amount: number | null;
 };
 type RefundOperationLineRow = {
   id: string; order_line_id: string; requested_quantity: number;
@@ -58,10 +67,47 @@ type RefundOperationLineRow = {
 type RefundOrderSearchRow = {
   id: string; stripe_checkout_session_id: string; stripe_payment_intent_id: string;
   amount_total: number; currency: string; status: string; schema_version: number;
+  products_subtotal: number | null; shipping_amount: number | null;
+  shipping_country: string | null; shipping_zone: string | null;
+  shipping_refunded_amount: number | null; reserved_shipping_refund_amount: number | null;
 };
 type RefundOrderLineSearchRow = {
   order_line_id: string; catalog_id: string; size_fr: number; quantity: number;
   unit_amount: number; refunded_quantity: number; reserved_refund_quantity: number;
+};
+export type RefundShippingContext = {
+  orderId: string;
+  stripeCheckoutSessionId: string;
+  stripePaymentIntentId: string;
+  amountTotal: number;
+  currency: string;
+  orderStatus: string;
+  schemaVersion: number;
+  pennylaneInvoiceId: string;
+  customerEmail: string;
+  productsSubtotal: number | null;
+  shippingAmount: number | null;
+  shippingCountry: string | null;
+  shippingZone: string | null;
+  shippingRefundedAmount: number | null;
+  reservedShippingRefundAmount: number | null;
+};
+type RefundShippingContextRow = {
+  id: string;
+  stripe_checkout_session_id: string;
+  stripe_payment_intent_id: string;
+  amount_total: number;
+  currency: string;
+  status: string;
+  schema_version: number;
+  pennylane_invoice_id: string;
+  customer_email: string;
+  products_subtotal: number | null;
+  shipping_amount: number | null;
+  shipping_country: string | null;
+  shipping_zone: string | null;
+  shipping_refunded_amount: number | null;
+  reserved_shipping_refund_amount: number | null;
 };
 type RefundPersistenceErrorDetails = { code: string };
 
@@ -81,6 +127,9 @@ function mapContext(row: RefundContextRow): RefundContext {
     currency: row.currency, orderStatus: row.order_status, schemaVersion: row.schema_version,
     pennylaneInvoiceId: row.pennylane_invoice_id,
     pennylaneInvoiceLineId: row.pennylane_invoice_line_id, customerEmail: row.customer_email,
+    shippingAmount: row.shipping_amount,
+    shippingRefundedAmount: row.shipping_refunded_amount,
+    reservedShippingRefundAmount: row.reserved_shipping_refund_amount,
   };
 }
 
@@ -95,7 +144,8 @@ async function mapOperation(db: OrdersDatabase, row: RefundOperationRow): Promis
     `SELECT id, order_line_id, requested_quantity, refunded_quantity_before, unit_amount, amount
      FROM refund_operation_lines WHERE refund_operation_id = ?1 ORDER BY created_at, id`,
   ).bind(row.id).all<RefundOperationLineRow>();
-  if (!result.success || result.results.length === 0) {
+  const shippingRefundAmount = row.shipping_refund_amount ?? 0;
+  if (!result.success || (result.results.length === 0 && shippingRefundAmount === 0)) {
     throw new RefundPersistenceError("REFUND_OPERATION_LINES_NOT_FOUND");
   }
   const lines = result.results.map(mapOperationLine);
@@ -105,14 +155,17 @@ async function mapOperation(db: OrdersDatabase, row: RefundOperationRow): Promis
     stripeIdempotencyKey: row.stripe_idempotency_key, stripeRefundId: row.stripe_refund_id,
     status: row.status, failureCode: row.failure_code,
     pennylaneCreditNoteId: row.pennylane_credit_note_id, creditNoteStatus: row.credit_note_status,
-    lines, orderLineId: first.orderLineId, requestedQuantity: first.requestedQuantity,
-    refundedQuantityBefore: first.refundedQuantityBefore,
+    shippingRefundAmount,
+    lines, orderLineId: first?.orderLineId ?? null, requestedQuantity: first?.requestedQuantity ?? 0,
+    refundedQuantityBefore: first?.refundedQuantityBefore ?? 0,
   };
 }
 
 export async function findRefundOrderByReference(db: OrdersDatabase, reference: string): Promise<RefundOrderSearchResult | null> {
   const result = await db.prepare(
-    `SELECT id, stripe_checkout_session_id, stripe_payment_intent_id, amount_total, currency, status, schema_version
+    `SELECT id, stripe_checkout_session_id, stripe_payment_intent_id, amount_total, currency,
+            status, schema_version, products_subtotal, shipping_amount, shipping_country,
+            shipping_zone, shipping_refunded_amount, reserved_shipping_refund_amount
      FROM orders WHERE id = ?1 OR stripe_payment_intent_id = ?1 OR stripe_checkout_session_id = ?1`,
   ).bind(reference).all<RefundOrderSearchRow>();
   if (!result.success) throw new RefundPersistenceError("ORDER_LOOKUP_FAILED");
@@ -128,6 +181,10 @@ export async function findRefundOrderByReference(db: OrdersDatabase, reference: 
     id: order.id, stripeCheckoutSessionId: order.stripe_checkout_session_id,
     stripePaymentIntentId: order.stripe_payment_intent_id, amountTotal: order.amount_total,
     currency: order.currency, status: order.status, schemaVersion: order.schema_version,
+    productsSubtotal: order.products_subtotal, shippingAmount: order.shipping_amount,
+    shippingCountry: order.shipping_country, shippingZone: order.shipping_zone,
+    shippingRefundedAmount: order.shipping_refunded_amount,
+    reservedShippingRefundAmount: order.reserved_shipping_refund_amount,
     lines: lines.results.map((line) => ({ orderLineId: line.order_line_id,
       catalogId: line.catalog_id, sizeFr: line.size_fr, quantity: line.quantity,
       unitAmount: line.unit_amount, refundedQuantity: line.refunded_quantity,
@@ -142,7 +199,9 @@ export async function getRefundContext(db: OrdersDatabase, orderLineId: string):
             ol.reserved_refund_quantity, o.stripe_checkout_session_id,
             o.stripe_payment_intent_id, o.amount_total, o.currency,
             o.status AS order_status, o.schema_version, o.pennylane_invoice_id,
-            ol.pennylane_invoice_line_id, o.customer_email
+            ol.pennylane_invoice_line_id, o.customer_email,
+            o.shipping_amount, o.shipping_refunded_amount,
+            o.reserved_shipping_refund_amount
      FROM order_lines ol INNER JOIN orders o ON o.id = ol.order_id
      WHERE ol.order_line_id = ?1`,
   ).bind(orderLineId).first<RefundContextRow>();
@@ -165,10 +224,70 @@ export async function findRefundOperation(db: OrdersDatabase, operationId: strin
 }
 export const findRefundOperationById = findRefundOperation;
 
+export async function getRefundShippingContext(
+  db: OrdersDatabase,
+  orderId: string,
+): Promise<RefundShippingContext | null> {
+  const row = await db.prepare(
+    `SELECT id, stripe_checkout_session_id, stripe_payment_intent_id,
+            amount_total, currency, status, schema_version, pennylane_invoice_id,
+            customer_email, products_subtotal, shipping_amount, shipping_country,
+            shipping_zone, shipping_refunded_amount, reserved_shipping_refund_amount
+     FROM orders WHERE id = ?1`,
+  ).bind(orderId).first<RefundShippingContextRow>();
+  return row ? {
+    orderId: row.id,
+    stripeCheckoutSessionId: row.stripe_checkout_session_id,
+    stripePaymentIntentId: row.stripe_payment_intent_id,
+    amountTotal: row.amount_total,
+    currency: row.currency,
+    orderStatus: row.status,
+    schemaVersion: row.schema_version,
+    pennylaneInvoiceId: row.pennylane_invoice_id,
+    customerEmail: row.customer_email,
+    productsSubtotal: row.products_subtotal,
+    shippingAmount: row.shipping_amount,
+    shippingCountry: row.shipping_country,
+    shippingZone: row.shipping_zone,
+    shippingRefundedAmount: row.shipping_refunded_amount,
+    reservedShippingRefundAmount: row.reserved_shipping_refund_amount,
+  } : null;
+}
+
+function validateShippingRefundAvailability(
+  context: {
+    shippingAmount?: number | null;
+    shippingRefundedAmount?: number | null;
+    reservedShippingRefundAmount?: number | null;
+  },
+  shippingRefundAmount: number,
+) {
+  if (!Number.isInteger(shippingRefundAmount) || shippingRefundAmount < 0) {
+    throw new RefundPersistenceError("INVALID_SHIPPING_REFUND_AMOUNT");
+  }
+  if (shippingRefundAmount === 0) return;
+
+  const shippingAmount = context.shippingAmount;
+  const refunded = context.shippingRefundedAmount ?? 0;
+  const reserved = context.reservedShippingRefundAmount ?? 0;
+  if (
+    !Number.isInteger(shippingAmount) ||
+    (shippingAmount as number) <= 0 ||
+    !Number.isInteger(refunded) ||
+    refunded < 0 ||
+    !Number.isInteger(reserved) ||
+    reserved < 0 ||
+    refunded + reserved + shippingRefundAmount > (shippingAmount as number)
+  ) {
+    throw new RefundPersistenceError("SHIPPING_REFUND_AMOUNT_UNAVAILABLE");
+  }
+}
+
 export function assertRefundOperationMatches(
   operation: RefundOperation,
   contexts: RefundContext[],
   selections: RefundSelection[],
+  shippingRefundAmount = 0,
 ) {
   if (operation.lines.length !== selections.length || contexts.length !== selections.length) {
     throw new RefundPersistenceError("REFUND_OPERATION_CONFLICT");
@@ -184,7 +303,22 @@ export function assertRefundOperationMatches(
       context.currency !== firstContext.currency)) {
     throw new RefundPersistenceError("REFUND_OPERATION_CONFLICT");
   }
-  let amount = 0;
+  if (
+    !Number.isInteger(shippingRefundAmount) ||
+    shippingRefundAmount < 0 ||
+    (operation.shippingRefundAmount ?? 0) !== shippingRefundAmount
+  ) {
+    throw new RefundPersistenceError("REFUND_OPERATION_CONFLICT");
+  }
+  if (shippingRefundAmount > 0 && operation.status === "pending" &&
+    (firstContext.reservedShippingRefundAmount ?? 0) < shippingRefundAmount) {
+    throw new RefundPersistenceError("REFUND_RESERVATION_CONFLICT");
+  }
+  if (shippingRefundAmount > 0 && operation.status === "succeeded" &&
+    (firstContext.shippingRefundedAmount ?? 0) < shippingRefundAmount) {
+    throw new RefundPersistenceError("REFUND_FINALIZATION_CONFLICT");
+  }
+  let amount = shippingRefundAmount;
   for (const line of operation.lines) {
     const context = contextsById.get(line.orderLineId);
     const selection = selectionsById.get(line.orderLineId);
@@ -211,6 +345,7 @@ export function assertRefundOperationMatches(
 
 export async function reserveRefundOperationLines(
   db: OrdersDatabase, contexts: RefundContext[], selections: RefundSelection[], operationId: string,
+  shippingRefundAmount = 0,
 ) {
   if (!UUID_PATTERN.test(operationId)) throw new RefundPersistenceError("INVALID_REFUND_OPERATION_ID");
   if (contexts.length === 0 || contexts.length !== selections.length ||
@@ -229,9 +364,10 @@ export async function reserveRefundOperationLines(
   }
   const existing = await findRefundOperation(db, operationId);
   if (existing) {
-    assertRefundOperationMatches(existing, checkedContexts, sortedSelections);
+    assertRefundOperationMatches(existing, checkedContexts, sortedSelections, shippingRefundAmount);
     return { operation: existing, created: false };
   }
+  validateShippingRefundAvailability(checkedContexts[0], shippingRefundAmount);
   const timestamp = new Date().toISOString();
   const lines = sortedSelections.map((selection, index): RefundOperationLine => {
     const context = checkedContexts[index];
@@ -244,18 +380,22 @@ export async function reserveRefundOperationLines(
       unitAmount: context.unitAmount, amount: context.unitAmount * selection.requestedQuantity };
   });
   const operation: RefundOperation = {
-    id: operationId, orderId, amount: lines.reduce((sum, line) => sum + line.amount, 0), currency,
+    id: operationId,
+    orderId,
+    amount: lines.reduce((sum, line) => sum + line.amount, shippingRefundAmount),
+    currency,
     stripeIdempotencyKey: `khaos-refund-v3:${operationId}`, stripeRefundId: null,
     status: "pending", failureCode: null, pennylaneCreditNoteId: null,
-    creditNoteStatus: "pending", lines, orderLineId: lines[0].orderLineId,
+    creditNoteStatus: "pending", shippingRefundAmount, lines, orderLineId: lines[0].orderLineId,
     requestedQuantity: lines[0].requestedQuantity, refundedQuantityBefore: lines[0].refundedQuantityBefore,
   };
   const statements = [
     db.prepare(
       `INSERT INTO refund_operations (id, order_id, amount, currency, stripe_idempotency_key,
-       stripe_refund_id, status, failure_code, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, NULL, 'pending', NULL, ?6, ?6)`,
-    ).bind(operation.id, operation.orderId, operation.amount, operation.currency, operation.stripeIdempotencyKey, timestamp),
+       stripe_refund_id, status, failure_code, shipping_refund_amount, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, NULL, 'pending', NULL, ?6, ?7, ?7)`,
+    ).bind(operation.id, operation.orderId, operation.amount, operation.currency,
+      operation.stripeIdempotencyKey, shippingRefundAmount, timestamp),
     ...lines.map((line) => db.prepare(
       `INSERT INTO refund_operation_lines (id, refund_operation_id, order_line_id,
        requested_quantity, refunded_quantity_before, unit_amount, amount, created_at, updated_at)
@@ -273,7 +413,7 @@ export async function reserveRefundOperationLines(
     const concurrent = await findRefundOperation(db, operationId);
     if (!concurrent) throw new RefundPersistenceError("REFUND_RESERVATION_CONFLICT");
     const currentContexts = await getRefundContexts(db, concurrent.lines.map((line) => line.orderLineId));
-    assertRefundOperationMatches(concurrent, currentContexts, sortedSelections);
+    assertRefundOperationMatches(concurrent, currentContexts, sortedSelections, shippingRefundAmount);
     return { operation: concurrent, created: false };
   }
 }
@@ -282,7 +422,91 @@ export async function reserveRefundOperation(db: OrdersDatabase, context: Refund
   return reserveRefundOperationLines(db, [context], [{ orderLineId: context.orderLineId, requestedQuantity }], operationId);
 }
 
+export async function reserveShippingRefundOperation(
+  db: OrdersDatabase,
+  orderId: string,
+  shippingRefundAmount: number,
+  operationId: string,
+) {
+  if (!UUID_PATTERN.test(operationId)) {
+    throw new RefundPersistenceError("INVALID_REFUND_OPERATION_ID");
+  }
+  const context = await getRefundShippingContext(db, orderId);
+  if (!context) throw new RefundPersistenceError("ORDER_NOT_FOUND");
+  if (shippingRefundAmount === 0) {
+    throw new RefundPersistenceError("INVALID_SHIPPING_REFUND_AMOUNT");
+  }
+
+  const existing = await findRefundOperation(db, operationId);
+  if (existing) {
+    assertShippingOnlyOperationMatches(existing, context, shippingRefundAmount);
+    return { operation: existing, created: false };
+  }
+  validateShippingRefundAvailability(context, shippingRefundAmount);
+
+  const timestamp = new Date().toISOString();
+  const operation: RefundOperation = {
+    id: operationId,
+    orderId,
+    amount: shippingRefundAmount,
+    currency: context.currency,
+    stripeIdempotencyKey: `khaos-refund-v3:${operationId}`,
+    stripeRefundId: null,
+    status: "pending",
+    failureCode: null,
+    pennylaneCreditNoteId: null,
+    creditNoteStatus: "pending",
+    shippingRefundAmount,
+    lines: [],
+    orderLineId: null,
+    requestedQuantity: 0,
+    refundedQuantityBefore: 0,
+  };
+  const statement = db.prepare(
+    `INSERT INTO refund_operations (id, order_id, amount, currency, stripe_idempotency_key,
+     stripe_refund_id, status, failure_code, shipping_refund_amount, created_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, NULL, 'pending', NULL, ?6, ?7, ?7)`,
+  ).bind(operation.id, operation.orderId, operation.amount, operation.currency,
+    operation.stripeIdempotencyKey, shippingRefundAmount, timestamp);
+
+  try {
+    const results = await db.batch([statement]);
+    if (results.length !== 1 || !results[0]?.success) {
+      throw new RefundPersistenceError("REFUND_RESERVATION_FAILED");
+    }
+    return { operation, created: true };
+  } catch {
+    const concurrent = await findRefundOperation(db, operationId);
+    if (!concurrent) throw new RefundPersistenceError("REFUND_RESERVATION_CONFLICT");
+    const current = await getRefundShippingContext(db, orderId);
+    if (!current) throw new RefundPersistenceError("ORDER_NOT_FOUND");
+    assertShippingOnlyOperationMatches(concurrent, current, shippingRefundAmount);
+    return { operation: concurrent, created: false };
+  }
+}
+
+export function assertShippingOnlyOperationMatches(
+  operation: RefundOperation,
+  context: RefundShippingContext,
+  shippingRefundAmount: number,
+) {
+  if (
+    operation.orderId !== context.orderId ||
+    operation.currency !== context.currency ||
+    operation.lines.length !== 0 ||
+    operation.shippingRefundAmount !== shippingRefundAmount ||
+    operation.amount !== shippingRefundAmount ||
+    (operation.status === "pending" &&
+      (context.reservedShippingRefundAmount ?? 0) < shippingRefundAmount) ||
+    (operation.status === "succeeded" &&
+      (context.shippingRefundedAmount ?? 0) < shippingRefundAmount)
+  ) {
+    throw new RefundPersistenceError("REFUND_OPERATION_CONFLICT");
+  }
+}
+
 export async function getRefundOperationContexts(db: OrdersDatabase, operation: RefundOperation) {
+  if (operation.lines.length === 0) return [];
   const contexts = await getRefundContexts(db, operation.lines.map((line) => line.orderLineId));
   if (contexts.some((context) => context.orderId !== operation.orderId)) {
     throw new RefundPersistenceError("REFUND_LINES_ORDER_CONFLICT");

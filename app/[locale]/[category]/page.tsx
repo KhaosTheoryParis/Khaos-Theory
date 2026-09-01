@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { isLocale, supportedLocales } from "../../i18n/config";
 import { getDictionary } from "../../i18n";
 import CategoryPage, { isPublicCategory, publicCategories } from "../../public/category-page";
+import { localizedPublicMetadata } from "../../public/public-seo";
 
 type LocalizedCategoryPageProps = {
   params: Promise<{ locale: string; category: string }>;
@@ -17,7 +18,13 @@ export async function generateMetadata({ params }: LocalizedCategoryPageProps): 
   if (!isLocale(locale) || !isPublicCategory(category)) return {};
 
   const dictionary = getDictionary(locale);
-  return { title: dictionary.metadata.categoryTitle.replace("{category}", dictionary.categories[category]) };
+  const categoryName = dictionary.categories[category];
+  return localizedPublicMetadata({
+    locale,
+    route: category,
+    title: dictionary.metadata.categoryTitle.replace("{category}", categoryName),
+    description: dictionary.metadata.categoryDescription.replace("{category}", categoryName),
+  });
 }
 
 export default async function LocalizedCategoryPage({ params }: LocalizedCategoryPageProps) {

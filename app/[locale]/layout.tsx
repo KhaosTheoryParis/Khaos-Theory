@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { isLocale } from "../i18n/config";
+import { publicSiteUrl } from "../public/public-seo";
 import "../../public/style.css";
 import "./localized-home.css";
 
@@ -12,6 +13,7 @@ type LocaleRootLayoutProps = {
 
 export const metadata: Metadata = {
   title: "Khaos Theory",
+  metadataBase: publicSiteUrl,
   icons: {
     icon: [{ url: "/logo.jpeg", type: "image/jpeg" }],
   },

@@ -86,6 +86,9 @@ function refundDatabase(quantity = 3) {
     "migrations/0003_track_refund_credit_notes.sql",
     "migrations/0006_harden_refund_operations.sql",
     "migrations/0007_create_multi_line_refund_operations.sql",
+    "migrations/0008_add_order_customer_name.sql",
+    "migrations/0009_add_shipping_to_orders.sql",
+    "migrations/0010_add_shipping_refunds.sql",
   ]) {
     sqlite.exec(readFileSync(migration, "utf8"));
   }
@@ -352,6 +355,141 @@ test("refund.updated to failed releases the operation without Pennylane", async 
   const result = await harness.run("refund.updated");
   assert.equal(result.status, "failed");
   assert.deepEqual(harness.counts(), { finalizeCount: 0, failCount: 1, creditNoteCreateCount: 0 });
+});
+
+test("refund.failed releases product and shipping reservations exactly once", async () => {
+  const db = refundDatabase(3);
+  db.sqlite.prepare(
+    `UPDATE orders
+     SET products_subtotal = 60000, shipping_amount = 1000,
+         shipping_country = 'FR', shipping_zone = 'FR', amount_total = 61000
+     WHERE id = ?`,
+  ).run(ORDER_ID);
+  db.sqlite.exec(
+    `CREATE TABLE refund_operation_update_audit (operation_id TEXT NOT NULL);
+     CREATE TRIGGER audit_refund_operation_updates
+     AFTER UPDATE ON refund_operations
+     BEGIN
+       INSERT INTO refund_operation_update_audit (operation_id) VALUES (NEW.id);
+     END;`,
+  );
+
+  const productContext = await requiredContext(db);
+  const reservation = await reserveRefundOperationLines(
+    db,
+    [productContext],
+    [{ orderLineId: ORDER_LINE_ID, requestedQuantity: 1 }],
+    OPERATION_1,
+    1_000,
+  );
+  const failedRefund = {
+    ...refund("failed"),
+    amount: 21_000,
+    metadata: {
+      schema_version: "3",
+      refund_operation_id: OPERATION_1,
+      checkout_session_id: CHECKOUT_ID,
+      order_id: ORDER_ID,
+    },
+  } as Stripe.Refund;
+  let pennylaneCreditNoteCalls = 0;
+  const runFailedEvent = () => processStructuredRefundEvent({
+    stripe: {} as Stripe,
+    eventRefund: failedRefund,
+    eventCreated: 0,
+    eventType: "refund.failed",
+    stripeSecretKey: "sk_test_not_real",
+    pennylaneToken: undefined,
+    db,
+    dependencies: {
+      retrieveRefund: async () => failedRefund,
+      syncPennylane: async () => {
+        pennylaneCreditNoteCalls += 1;
+        throw new Error("UNEXPECTED_PENNYLANE_CREDIT_NOTE");
+      },
+    },
+  });
+
+  assert.equal(reservation.operation.amount, 21_000);
+  assert.deepEqual(
+    { ...db.sqlite.prepare(
+      `SELECT refunded_quantity, reserved_refund_quantity
+       FROM order_lines WHERE order_line_id = ?`,
+    ).get(ORDER_LINE_ID) },
+    { refunded_quantity: 0, reserved_refund_quantity: 1 },
+  );
+  assert.deepEqual(
+    { ...db.sqlite.prepare(
+      `SELECT shipping_refunded_amount, reserved_shipping_refund_amount
+       FROM orders WHERE id = ?`,
+    ).get(ORDER_ID) },
+    { shipping_refunded_amount: null, reserved_shipping_refund_amount: 1_000 },
+  );
+
+  assert.deepEqual(await runFailedEvent(), {
+    status: "failed",
+    refundId: failedRefund.id,
+  });
+  const stateAfterFailure = {
+    operation: { ...db.sqlite.prepare(
+      `SELECT status, failure_code, stripe_refund_id, amount, shipping_refund_amount, updated_at
+       FROM refund_operations WHERE id = ?`,
+    ).get(OPERATION_1) },
+    product: { ...db.sqlite.prepare(
+      `SELECT refunded_quantity, reserved_refund_quantity
+       FROM order_lines WHERE order_line_id = ?`,
+    ).get(ORDER_LINE_ID) },
+    shipping: { ...db.sqlite.prepare(
+      `SELECT shipping_refunded_amount, reserved_shipping_refund_amount
+       FROM orders WHERE id = ?`,
+    ).get(ORDER_ID) },
+  };
+  const updateCountAfterFailure = db.sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM refund_operation_update_audit",
+  ).get()?.count;
+  assert.deepEqual(stateAfterFailure.product, {
+    refunded_quantity: 0,
+    reserved_refund_quantity: 0,
+  });
+  assert.deepEqual(stateAfterFailure.shipping, {
+    shipping_refunded_amount: null,
+    reserved_shipping_refund_amount: 0,
+  });
+  assert.deepEqual(stateAfterFailure.operation, {
+    status: "failed",
+    failure_code: "STRIPE_REFUND_FAILED",
+    stripe_refund_id: failedRefund.id,
+    amount: 21_000,
+    shipping_refund_amount: 1_000,
+    updated_at: (stateAfterFailure.operation as { updated_at: string }).updated_at,
+  });
+  assert.equal(pennylaneCreditNoteCalls, 0);
+
+  assert.deepEqual(await runFailedEvent(), {
+    status: "failed",
+    refundId: failedRefund.id,
+  });
+  assert.deepEqual({
+    operation: { ...db.sqlite.prepare(
+      `SELECT status, failure_code, stripe_refund_id, amount, shipping_refund_amount, updated_at
+       FROM refund_operations WHERE id = ?`,
+    ).get(OPERATION_1) },
+    product: { ...db.sqlite.prepare(
+      `SELECT refunded_quantity, reserved_refund_quantity
+       FROM order_lines WHERE order_line_id = ?`,
+    ).get(ORDER_LINE_ID) },
+    shipping: { ...db.sqlite.prepare(
+      `SELECT shipping_refunded_amount, reserved_shipping_refund_amount
+       FROM orders WHERE id = ?`,
+    ).get(ORDER_ID) },
+  }, stateAfterFailure);
+  assert.equal(
+    db.sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM refund_operation_update_audit",
+    ).get()?.count,
+    updateCountAfterFailure,
+  );
+  assert.equal(pennylaneCreditNoteCalls, 0);
 });
 
 test("the same refund.created twice does not create two Pennylane credit notes", async () => {
@@ -834,6 +972,48 @@ test("charge.refunded schema 3 remains diagnostic and never starts legacy credit
     trace: () => undefined,
   });
   assert.equal(refundListCalls, 0);
+});
+
+test("charge.refunded rejects a mixed structured and external refund for manual review", async () => {
+  const structuredRefund = {
+    ...refund("succeeded"),
+    id: "re_structuredMixedRefund",
+    metadata: {
+      schema_version: "3",
+      refund_operation_id: OPERATION_1,
+      checkout_session_id: CHECKOUT_ID,
+      order_id: ORDER_ID,
+    },
+  } as Stripe.Refund;
+  const externalRefund = {
+    ...refund("succeeded", false),
+    id: "re_externalMixedRefund",
+    metadata: {},
+  } as Stripe.Refund;
+  const event = {
+    id: "evt_chargeRefundedMixed",
+    type: "charge.refunded",
+    created: 0,
+    data: { object: {
+      id: "ch_refundHardening",
+      object: "charge",
+      amount: 45_000,
+      amount_refunded: 45_000,
+      currency: "eur",
+      payment_intent: PAYMENT_INTENT_ID,
+      refunds: { data: [structuredRefund, externalRefund] },
+    } },
+  } as unknown as Stripe.Event;
+
+  await assert.rejects(
+    processStripeEvent({
+      event,
+      env: { STRIPE_SECRET_KEY: "sk_test_not_real", PENNYLANE_API_TOKEN: "sandbox-not-real" },
+      stripe: {} as Stripe,
+      trace: () => undefined,
+    }),
+    /UNSUPPORTED_EXTERNAL_REFUND/,
+  );
 });
 
 test("refund.created, refund.updated and charge.refunded schema 3 produce exactly one credit note", async () => {

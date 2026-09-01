@@ -5,6 +5,7 @@ import { isLocale } from "../../i18n/config";
 import CheckoutClient from "../../public/checkout-client";
 import PublicFooter from "../../public/public-footer";
 import PublicHeader from "../../public/public-header";
+import { localizedPublicMetadata } from "../../public/public-seo";
 
 type LocalizedCheckoutPageProps = {
   params: Promise<{ locale: string }>;
@@ -13,7 +14,14 @@ type LocalizedCheckoutPageProps = {
 export async function generateMetadata({ params }: LocalizedCheckoutPageProps): Promise<Metadata> {
   const { locale } = await params;
   if (!isLocale(locale)) return {};
-  return { title: getDictionary(locale).metadata.checkoutTitle };
+  const metadata = getDictionary(locale).metadata;
+  return localizedPublicMetadata({
+    locale,
+    route: "checkout",
+    title: metadata.checkoutTitle,
+    description: metadata.checkoutDescription,
+    indexable: false,
+  });
 }
 
 export default async function LocalizedCheckoutPage({ params }: LocalizedCheckoutPageProps) {

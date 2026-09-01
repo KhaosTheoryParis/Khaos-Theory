@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { isLocale, supportedLocales } from "../i18n/config";
 import { getDictionary } from "../i18n";
 import { localizedHref } from "../i18n/routes";
+import { localizedPublicMetadata } from "../public/public-seo";
 import { homeCatalog, localizedProductHref } from "../public/home-catalog";
 import PublicFooter from "../public/public-footer";
 import PublicHeader from "../public/public-header";
@@ -19,7 +20,8 @@ export async function generateMetadata({ params }: LocalePageProps): Promise<Met
   const { locale } = await params;
   if (!isLocale(locale)) return {};
 
-  return { title: getDictionary(locale).metadata.homeTitle };
+  const metadata = getDictionary(locale).metadata;
+  return localizedPublicMetadata({ locale, route: "home", title: metadata.homeTitle, description: metadata.homeDescription });
 }
 
 export default async function LocalizedHomePage({ params }: LocalePageProps) {

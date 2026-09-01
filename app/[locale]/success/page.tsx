@@ -5,6 +5,7 @@ import { isLocale } from "../../i18n/config";
 import { localizedHref } from "../../i18n/routes";
 import PublicFooter from "../../public/public-footer";
 import PublicHeader from "../../public/public-header";
+import { localizedPublicMetadata } from "../../public/public-seo";
 
 type LocalizedSuccessPageProps = {
   params: Promise<{ locale: string }>;
@@ -19,7 +20,14 @@ function safeSessionId(value: string | string[] | undefined): string | undefined
 export async function generateMetadata({ params }: LocalizedSuccessPageProps): Promise<Metadata> {
   const { locale } = await params;
   if (!isLocale(locale)) return {};
-  return { title: getDictionary(locale).metadata.successTitle };
+  const metadata = getDictionary(locale).metadata;
+  return localizedPublicMetadata({
+    locale,
+    route: "success",
+    title: metadata.successTitle,
+    description: metadata.successDescription,
+    indexable: false,
+  });
 }
 
 export default async function LocalizedSuccessPage({ params, searchParams }: LocalizedSuccessPageProps) {

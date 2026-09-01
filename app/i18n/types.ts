@@ -11,8 +11,6 @@ export type TranslationDictionary = {
     cart: string;
   };
   language: {
-    french: string;
-    english: string;
     switcherLabel: string;
   };
   common: {
@@ -63,12 +61,28 @@ export type TranslationDictionary = {
     removeOne: string;
     addOne: string;
     quantityFor: string;
+    productsSubtotal: string;
     confirmAndPay: string;
     redirecting: string;
     paymentError: string;
     invalidCart: string;
     unavailableItem: string;
     loading: string;
+    cartUpdateError: string;
+    shippingAddress: string;
+    shipping: string;
+    freeShipping: string;
+    checkingAddress: string;
+    ineligibleAddress: string;
+    shippingQuoteError: string;
+    contactDetails: string;
+    paymentDetails: string;
+    securePayment: string;
+    initializingPayment: string;
+    shippingValidated: string;
+    confirmingPayment: string;
+    checkoutInitializationError: string;
+    retryCheckout: string;
   };
   success: {
     title: string;
@@ -107,13 +121,21 @@ export type TranslationDictionary = {
   };
   metadata: {
     homeTitle: string;
+    homeDescription: string;
     categoryTitle: string;
+    categoryDescription: string;
     productTitle: string;
+    productDescription: string;
     checkoutTitle: string;
+    checkoutDescription: string;
     successTitle: string;
+    successDescription: string;
     aboutTitle: string;
+    aboutDescription: string;
     contactTitle: string;
+    contactDescription: string;
     legalTitle: string;
+    legalDescription: string;
   };
   footer: {
     city: string;

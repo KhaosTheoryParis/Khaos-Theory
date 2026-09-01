@@ -62,7 +62,7 @@ class SQLiteDatabaseAdapter implements OrdersDatabase {
 
 function migratedDatabase() {
   const sqlite = new DatabaseSync(":memory:");
-  for (let version = 1; version <= 8; version += 1) {
+  for (let version = 1; version <= 10; version += 1) {
     const prefix = String(version).padStart(4, "0");
     const migration = [
       "0001_create_orders.sql",
@@ -73,6 +73,8 @@ function migratedDatabase() {
       "0006_harden_refund_operations.sql",
       "0007_create_multi_line_refund_operations.sql",
       "0008_add_order_customer_name.sql",
+      "0009_add_shipping_to_orders.sql",
+      "0010_add_shipping_refunds.sql",
     ][version - 1];
     assert.ok(migration?.startsWith(prefix));
     sqlite.exec(readFileSync(`migrations/${migration}`, "utf8"));

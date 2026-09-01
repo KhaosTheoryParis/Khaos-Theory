@@ -4,6 +4,7 @@ import { getDictionary } from "../../i18n";
 import { isLocale } from "../../i18n/config";
 import PublicFooter from "../../public/public-footer";
 import PublicHeader from "../../public/public-header";
+import { localizedPublicMetadata } from "../../public/public-seo";
 
 const contactEmail = "contact@khaostheoryparis.com";
 
@@ -14,7 +15,8 @@ type LocalizedContactPageProps = {
 export async function generateMetadata({ params }: LocalizedContactPageProps): Promise<Metadata> {
   const { locale } = await params;
   if (!isLocale(locale)) return {};
-  return { title: getDictionary(locale).metadata.contactTitle };
+  const metadata = getDictionary(locale).metadata;
+  return localizedPublicMetadata({ locale, route: "contact", title: metadata.contactTitle, description: metadata.contactDescription });
 }
 
 export default async function LocalizedContactPage({ params }: LocalizedContactPageProps) {

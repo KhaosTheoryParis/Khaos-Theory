@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getDictionary } from "../../i18n";
 import { isLocale } from "../../i18n/config";
+import { localizedPublicMetadata } from "../../public/public-seo";
 import PublicFooter from "../../public/public-footer";
 import PublicHeader from "../../public/public-header";
 
@@ -12,7 +13,8 @@ type LocalizedAboutPageProps = {
 export async function generateMetadata({ params }: LocalizedAboutPageProps): Promise<Metadata> {
   const { locale } = await params;
   if (!isLocale(locale)) return {};
-  return { title: getDictionary(locale).metadata.aboutTitle };
+  const metadata = getDictionary(locale).metadata;
+  return localizedPublicMetadata({ locale, route: "about", title: metadata.aboutTitle, description: metadata.aboutDescription });
 }
 
 export default async function LocalizedAboutPage({ params }: LocalizedAboutPageProps) {

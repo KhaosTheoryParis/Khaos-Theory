@@ -27,6 +27,13 @@ export type PersistedOrderLineInput = {
   unitAmount: number;
 };
 
+export type PersistedOrderShippingInput = {
+  productsSubtotal: number;
+  shippingAmount: number;
+  shippingCountry: "FR";
+  shippingZone: "FR";
+};
+
 export type PersistOrderInput = {
   stripeCheckoutSessionId: string;
   stripePaymentIntentId: string;
@@ -35,6 +42,7 @@ export type PersistOrderInput = {
   customerEmail: string;
   currency: string;
   amountTotal: number;
+  shipping?: PersistedOrderShippingInput | null;
   status: "paid";
   schemaVersion: 1;
   createdAt: string;
@@ -50,6 +58,10 @@ type OrderRow = {
   customer_email: string;
   currency: string;
   amount_total: number;
+  products_subtotal: number | null;
+  shipping_amount: number | null;
+  shipping_country: string | null;
+  shipping_zone: string | null;
   status: string;
   schema_version: number;
   created_at: string;
@@ -164,7 +176,25 @@ function assertValidInput(input: PersistOrderInput) {
     computedTotal += line.quantity * line.unitAmount;
   }
 
-  if (computedTotal !== input.amountTotal) invalidFields.push("lines.amount_total");
+  const shipping = input.shipping ?? null;
+  if (shipping === null) {
+    if (computedTotal !== input.amountTotal) invalidFields.push("lines.amount_total");
+  } else {
+    if (!Number.isInteger(shipping.productsSubtotal) || shipping.productsSubtotal < 0) {
+      invalidFields.push("products_subtotal");
+    }
+    if (!Number.isInteger(shipping.shippingAmount) || shipping.shippingAmount < 0) {
+      invalidFields.push("shipping_amount");
+    }
+    if (shipping.shippingCountry !== "FR") invalidFields.push("shipping_country");
+    if (shipping.shippingZone !== "FR") invalidFields.push("shipping_zone");
+    if (computedTotal !== shipping.productsSubtotal) {
+      invalidFields.push("lines.products_subtotal");
+    }
+    if (shipping.productsSubtotal + shipping.shippingAmount !== input.amountTotal) {
+      invalidFields.push("shipping.amount_total");
+    }
+  }
 
   if (invalidFields.length > 0) {
     throw new OrderPersistenceError({
@@ -217,6 +247,18 @@ async function verifyExistingOrder(
     ["created_at", order.created_at, input.createdAt],
   ];
 
+  const shipping = input.shipping ?? null;
+  const immutableShippingFields: Array<[
+    string,
+    string | number | null,
+    string | number | null,
+  ]> = [
+    ["products_subtotal", order.products_subtotal, shipping?.productsSubtotal ?? null],
+    ["shipping_amount", order.shipping_amount, shipping?.shippingAmount ?? null],
+    ["shipping_country", order.shipping_country, shipping?.shippingCountry ?? null],
+    ["shipping_zone", order.shipping_zone, shipping?.shippingZone ?? null],
+  ];
+
   if (
     order.customer_name !== null &&
     input.customerName !== null &&
@@ -224,6 +266,9 @@ async function verifyExistingOrder(
   ) conflictingFields.push("customer_name");
 
   for (const [field, actual, expected] of immutableOrderFields) {
+    if (actual !== expected) conflictingFields.push(field);
+  }
+  for (const [field, actual, expected] of immutableShippingFields) {
     if (actual !== expected) conflictingFields.push(field);
   }
 
@@ -298,8 +343,9 @@ export async function persistPaidOrder(db: OrdersDatabase, input: PersistOrderIn
         `INSERT INTO orders (
           id, stripe_checkout_session_id, stripe_payment_intent_id,
           pennylane_invoice_id, customer_name, customer_email, currency, amount_total,
+          products_subtotal, shipping_amount, shipping_country, shipping_zone,
           status, schema_version, created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`,
       )
       .bind(
         orderId,
@@ -310,6 +356,10 @@ export async function persistPaidOrder(db: OrdersDatabase, input: PersistOrderIn
         input.customerEmail,
         input.currency,
         input.amountTotal,
+        input.shipping?.productsSubtotal ?? null,
+        input.shipping?.shippingAmount ?? null,
+        input.shipping?.shippingCountry ?? null,
+        input.shipping?.shippingZone ?? null,
         input.status,
         input.schemaVersion,
         input.createdAt,

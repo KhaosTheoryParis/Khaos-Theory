@@ -10,11 +10,11 @@ import {
   checkoutTotal,
   interpolateCheckoutText,
   isCheckoutItemValid,
-  localizedCheckoutSessionPayload,
   MAX_CART_QUANTITY,
   removeCheckoutItem,
 } from "./checkout-cart";
 import { readHistoricalCart, writeHistoricalCart, type HistoricalCartItem } from "./historical-cart";
+import CheckoutElementsPayment from "./checkout-elements-payment";
 
 type CheckoutClientProps = {
   locale: Locale;
@@ -28,8 +28,7 @@ function formatPrice(price: number): string {
 export default function CheckoutClient({ locale, dictionary }: CheckoutClientProps) {
   const [cart, setCart] = useState<HistoricalCartItem[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [status, setStatus] = useState("");
-  const [redirecting, setRedirecting] = useState(false);
+  const [cartError, setCartError] = useState("");
   const total = useMemo(() => checkoutTotal(cart, dictionary), [cart, dictionary]);
 
   useEffect(() => {
@@ -38,8 +37,13 @@ export default function CheckoutClient({ locale, dictionary }: CheckoutClientPro
   }, []);
 
   function persist(nextCart: HistoricalCartItem[]) {
-    writeHistoricalCart(window.localStorage, nextCart);
-    setCart(nextCart);
+    try {
+      writeHistoricalCart(window.localStorage, nextCart);
+      setCart(nextCart);
+      setCartError("");
+    } catch {
+      setCartError(dictionary.checkout.cartUpdateError);
+    }
   }
 
   function updateQuantity(key: string, direction: -1 | 1) {
@@ -48,29 +52,6 @@ export default function CheckoutClient({ locale, dictionary }: CheckoutClientPro
 
   function removeItem(key: string) {
     persist(removeCheckoutItem(cart, key));
-  }
-
-  async function startCheckout() {
-    if (!cart.every(isCheckoutItemValid)) {
-      setStatus(dictionary.checkout.invalidCart);
-      return;
-    }
-
-    setRedirecting(true);
-    setStatus(dictionary.checkout.redirecting);
-    try {
-      const response = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(localizedCheckoutSessionPayload(cart, locale)),
-      });
-      const session = await response.json() as { url?: unknown };
-      if (!response.ok || typeof session.url !== "string") throw new Error("CHECKOUT_REQUEST_FAILED");
-      window.location.assign(session.url);
-    } catch {
-      setRedirecting(false);
-      setStatus(dictionary.checkout.paymentError);
-    }
   }
 
   if (!loaded) {
@@ -107,9 +88,11 @@ export default function CheckoutClient({ locale, dictionary }: CheckoutClientPro
           );
         })}
       </div>
-      <div className="checkout-total"><span>{dictionary.checkout.total}</span><strong>{formatPrice(total)}</strong></div>
-      <button className="stripe-checkout-button" type="button" onClick={startCheckout} disabled={redirecting}>{dictionary.checkout.confirmAndPay}</button>
-      <p className="checkout-status" aria-live="polite">{status}</p>
+      <div className="checkout-total"><span>{dictionary.checkout.productsSubtotal}</span><strong>{formatPrice(total)}</strong></div>
+      {cartError ? <p className="checkout-status checkout-status--error" role="alert">{cartError}</p> : null}
+      {cart.every(isCheckoutItemValid)
+        ? <CheckoutElementsPayment cart={cart} locale={locale} dictionary={dictionary} />
+        : <p className="checkout-status" role="alert">{dictionary.checkout.invalidCart}</p>}
     </section>
   );
 }

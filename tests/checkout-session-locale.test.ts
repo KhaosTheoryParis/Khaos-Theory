@@ -48,15 +48,20 @@ test("client-supplied redirect fields cannot influence Stripe destinations", () 
   assert.doesNotMatch(JSON.stringify(urls), /evil\.example/);
 });
 
-test("catalog prices and product, size, and quantity validation remain unchanged", () => {
-  const source = readFileSync("app/api/create-checkout-session/route.ts", "utf8");
+test("catalog prices and product, size, and quantity validation remain server-side", () => {
+  const catalogSource = readFileSync("app/services/checkout-catalog.ts", "utf8");
+  const routeSource = readFileSync("app/api/create-checkout-session/route.ts", "utf8");
+  const handlerSource = readFileSync("app/services/checkout-elements-http.ts", "utf8");
 
-  assert.match(source, /geometry: \{ name: "Geometry", amount: 25000 \}/);
-  assert.match(source, /"carved-cross": \{ name: "Karved Kross", amount: 20000 \}/);
-  assert.match(source, /"damaged-ring-ii": \{ name: "Damaged Ring II", amount: 15000 \}/);
-  assert.match(source, /!product \|\| !Number\.isInteger\(quantity\) \|\| quantity < 1 \|\| quantity > 5/);
-  assert.match(source, /!Number\.isInteger\(size\) \|\| size < 48 \|\| size > 70/);
-  assert.match(source, /checkoutRedirectUrls\(env\.SITE_URL, localeResult\.locale\)/);
-  assert.match(source, /if \(!localeResult\.ok\)[\s\S]*Invalid checkout locale\.[\s\S]*status: 400/);
-  assert.doesNotMatch(source, /body\.(success_url|cancel_url|return_url|redirect_url|origin)/);
+  assert.match(catalogSource, /geometry: \{ name: "Geometry", amount: 25_000 \}/);
+  assert.match(catalogSource, /"carved-cross": \{ name: "Karved Kross", amount: 20_000 \}/);
+  assert.match(catalogSource, /"damaged-ring-ii": \{ name: "Damaged Ring II", amount: 15_000 \}/);
+  assert.match(catalogSource, /quantity < 1[\s\S]*quantity > CHECKOUT_MAX_QUANTITY/);
+  assert.match(catalogSource, /size < CHECKOUT_MIN_SIZE[\s\S]*size > CHECKOUT_MAX_SIZE/);
+  assert.match(handlerSource, /resolveCheckoutLocale\(parsedBody\.body\)/);
+  assert.match(handlerSource, /if \(!localeResult\.ok\)[\s\S]*Invalid checkout locale\.[\s\S]*400/);
+  assert.doesNotMatch(
+    `${routeSource}\n${handlerSource}`,
+    /parsedBody\.body\.(success_url|cancel_url|return_url|redirect_url|origin)/,
+  );
 });

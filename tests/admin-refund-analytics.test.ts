@@ -63,6 +63,9 @@ function applyCurrentRefundSchema(sqlite: DatabaseSync) {
     "0003_track_refund_credit_notes.sql",
     "0006_harden_refund_operations.sql",
     "0007_create_multi_line_refund_operations.sql",
+    "0008_add_order_customer_name.sql",
+    "0009_add_shipping_to_orders.sql",
+    "0010_add_shipping_refunds.sql",
   ]) {
     sqlite.exec(readFileSync(`migrations/${migration}`, "utf8"));
   }

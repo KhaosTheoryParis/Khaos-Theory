@@ -1,4 +1,6 @@
 import Stripe from "stripe";
+import type { PersistedOrderShippingInput } from "./orders";
+import { resolveCheckoutShipping } from "./stripe-checkout-shipping";
 
 const PENNYLANE_API_BASE_URL = "https://app.pennylane.com/api/external/v2";
 const STRIPE_INVOICE_REFERENCE_PREFIX = "stripe_checkout_";
@@ -6,6 +8,7 @@ const STRIPE_REFUND_REFERENCE_PREFIX = "stripe_refund_";
 const STRIPE_CUSTOMER_REFERENCE_PREFIX = "stripe_email_";
 const PENNYLANE_EXEMPT_VAT_RATE = "exempt";
 const VAT_EXEMPTION_MENTION = "TVA non applicable, art. 293 B du CGI";
+const PENNYLANE_SHIPPING_LABEL = "Livraison sécurisée / Secure shipping";
 const PENNYLANE_REQUEST_TIMEOUT_MS = 15_000;
 
 type PennylaneOperation =
@@ -83,6 +86,7 @@ export type PennylaneOrderLineMapping = StripeOrderLineMapping & {
 type PreparedInvoiceLines = {
   invoiceLines: PennylaneInvoiceLine[];
   orderLineMappings: StripeOrderLineMapping[];
+  shipping: PersistedOrderShippingInput | null;
 };
 
 type PennylaneStoredInvoiceLine = {
@@ -141,6 +145,7 @@ type PennylaneSyncResult =
       markAsPaid: PennylaneMarkAsPaidResult;
       email: PennylaneEmailResult;
       orderLineMappings: PennylaneOrderLineMapping[];
+      shipping: PersistedOrderShippingInput | null;
       createdAt: string;
     }
   | {
@@ -154,6 +159,7 @@ type PennylaneSyncResult =
       markAsPaid: PennylaneMarkAsPaidResult;
       email: PennylaneEmailResult;
       orderLineMappings: PennylaneOrderLineMapping[];
+      shipping: PersistedOrderShippingInput | null;
       createdAt: string;
     };
 
@@ -803,7 +809,18 @@ function buildInvoiceLines(
     };
   });
 
-  return { invoiceLines, orderLineMappings };
+  return { invoiceLines, orderLineMappings, shipping: null };
+}
+
+function buildShippingInvoiceLine(shippingAmount: number): PennylaneInvoiceLine {
+  return {
+    // Checkout locale is not persisted in this flow, so the label is deliberately bilingual.
+    label: PENNYLANE_SHIPPING_LABEL,
+    quantity: 1,
+    unit: "piece",
+    raw_currency_unit_price: formatUnitPrice(shippingAmount, 1),
+    vat_rate: PENNYLANE_EXEMPT_VAT_RATE,
+  };
 }
 
 function parseEuroAmountToCents(amount: string) {
@@ -1267,16 +1284,20 @@ async function attachPennylaneInvoiceLineIds(
   token: string,
   invoiceId: number | string,
   mappings: StripeOrderLineMapping[],
+  shipping: PersistedOrderShippingInput | null,
 ): Promise<PennylaneOrderLineMapping[]> {
-  if (mappings.length === 0) return [];
+  const paidShippingAmount =
+    shipping && shipping.shippingAmount > 0 ? shipping.shippingAmount : null;
+  const hasPaidShipping = paidShippingAmount !== null;
+  if (mappings.length === 0 && !hasPaidShipping) return [];
 
   const pennylaneLines = await listAllInvoiceLines(token, invoiceId, "rank");
 
-  if (pennylaneLines.length !== mappings.length) {
+  if (pennylaneLines.length !== mappings.length + (hasPaidShipping ? 1 : 0)) {
     throw new PennylaneSyncError({ code: "PENNYLANE_INVOICE_LINE_COUNT_MISMATCH" });
   }
 
-  return mappings.map((mapping, index) => {
+  const persistedMappings = mappings.map((mapping, index) => {
     const pennylaneLine = pennylaneLines[index];
 
     if (!pennylaneLine) {
@@ -1310,6 +1331,34 @@ async function attachPennylaneInvoiceLineIds(
       pennylaneInvoiceLineId: String(pennylaneLineId),
     };
   });
+
+  if (hasPaidShipping) {
+    const shippingLine = pennylaneLines[mappings.length];
+    const shippingLineAmount = shippingLine?.currency_amount
+      ? parseEuroAmountToCents(shippingLine.currency_amount)
+      : null;
+    const shippingUnitAmount = shippingLine?.raw_currency_unit_price
+      ? parseEuroAmountToCents(shippingLine.raw_currency_unit_price)
+      : null;
+
+    if (
+      !shippingLine ||
+      shippingLine.label !== PENNYLANE_SHIPPING_LABEL ||
+      Number(shippingLine.quantity) !== 1 ||
+      shippingLine.unit !== "piece" ||
+      shippingLineAmount !== paidShippingAmount ||
+      shippingUnitAmount !== paidShippingAmount ||
+      shippingLine.vat_rate !== PENNYLANE_EXEMPT_VAT_RATE
+    ) {
+      throw new PennylaneSyncError({
+        code: "PENNYLANE_SHIPPING_LINE_MISMATCH",
+        operation: "list_invoice_lines",
+        invoice_id: invoiceId,
+      });
+    }
+  }
+
+  return persistedMappings;
 }
 
 function negatePennylaneUnitPrice(value: string) {
@@ -1855,6 +1904,13 @@ export type PennylaneRefundLineInput = {
   unitAmount: number;
 };
 
+type ExpectedCreditNoteLine = {
+  sourceLine: PennylaneStoredInvoiceLine;
+  quantity: number;
+  unitAmount: number;
+  rawUnitPrice: string;
+};
+
 type MultiLineRefundDependencies = {
   inspectEnvironment?: typeof inspectPennylaneEnvironment;
   findInvoice?: typeof findInvoice;
@@ -1887,11 +1943,7 @@ function creditLineFingerprint({
 async function verifyMultiLineCreditNote(
   token: string,
   creditNoteId: number | string,
-  expectedLines: Array<{
-    sourceLine: PennylaneStoredInvoiceLine;
-    quantity: number;
-    unitAmount: number;
-  }>,
+  expectedLines: ExpectedCreditNoteLine[],
 ) {
   const actualLines = await listAllInvoiceLines(token, creditNoteId, "rank");
   if (actualLines.length !== expectedLines.length) {
@@ -1943,6 +1995,8 @@ export async function syncMultiLineRefundToPennylane({
   checkoutSessionId,
   invoiceId: expectedInvoiceId,
   lines,
+  shippingRefundAmount = 0,
+  shippingAmountPaid = null,
   refundAmount,
   invoiceAmountTotal,
   currency,
@@ -1956,6 +2010,8 @@ export async function syncMultiLineRefundToPennylane({
   checkoutSessionId: string;
   invoiceId: string;
   lines: PennylaneRefundLineInput[];
+  shippingRefundAmount?: number | null;
+  shippingAmountPaid?: number | null;
   refundAmount: number;
   invoiceAmountTotal: number;
   currency: string;
@@ -1973,23 +2029,28 @@ export async function syncMultiLineRefundToPennylane({
   const createCreditNote = dependencies.createCreditNote ?? (async (requestToken, payload) =>
     pennylaneRequest<PennylaneInvoice>(requestToken, "/customer_invoices",
       "create_credit_note", { method: "POST", body: JSON.stringify(payload) }));
-  const environment = await inspectEnvironment(token);
   const uniqueOrderLines = new Set(lines.map((line) => line.orderLineId));
   const uniqueInvoiceLines = new Set(lines.map((line) => line.invoiceLineId));
-  const computedAmount = lines.reduce(
+  const normalizedShippingRefundAmount = shippingRefundAmount ?? 0;
+  const productRefundAmount = lines.reduce(
     (total, line) => total + line.unitAmount * line.quantity,
     0,
   );
-
-  if (!environment.isSandbox) {
-    throw new PennylaneSyncError({ code: "PENNYLANE_SANDBOX_REQUIRED" });
-  }
-  if (currency !== "eur" || lines.length < 1 ||
+  if (currency !== "eur" ||
+    !Number.isInteger(normalizedShippingRefundAmount) || normalizedShippingRefundAmount < 0 ||
+    (normalizedShippingRefundAmount > 0 &&
+      (!Number.isInteger(shippingAmountPaid) || (shippingAmountPaid as number) <= 0 ||
+        normalizedShippingRefundAmount > (shippingAmountPaid as number))) ||
+    (lines.length === 0 && normalizedShippingRefundAmount === 0) ||
     uniqueOrderLines.size !== lines.length || uniqueInvoiceLines.size !== lines.length ||
     lines.some((line) => !Number.isInteger(line.quantity) || line.quantity < 1 ||
       !Number.isInteger(line.unitAmount) || line.unitAmount < 1) ||
-    computedAmount !== refundAmount) {
+    productRefundAmount + normalizedShippingRefundAmount !== refundAmount) {
     throw new PennylaneSyncError({ code: "INVALID_PARTIAL_REFUND_AMOUNT_OR_CURRENCY" });
+  }
+  const environment = await inspectEnvironment(token);
+  if (!environment.isSandbox) {
+    throw new PennylaneSyncError({ code: "PENNYLANE_SANDBOX_REQUIRED" });
   }
 
   const invoiceExternalReference = `${STRIPE_INVOICE_REFERENCE_PREFIX}${checkoutSessionId}`;
@@ -2014,7 +2075,7 @@ export async function syncMultiLineRefundToPennylane({
 
   const sourceLines = await getInvoiceLines(token, expectedInvoiceId, "rank");
   const sourceById = new Map(sourceLines.map((line) => [String(line.id), line]));
-  const expectedLines = lines.map((line) => {
+  const expectedLines: ExpectedCreditNoteLine[] = lines.map((line) => {
     const sourceLine = sourceById.get(line.invoiceLineId);
     const sourceQuantity = Number(sourceLine?.quantity);
     const sourceUnitAmount = sourceLine?.raw_currency_unit_price
@@ -2023,14 +2084,43 @@ export async function syncMultiLineRefundToPennylane({
     const sourceAmount = sourceLine?.currency_amount
       ? parseEuroAmountToCents(sourceLine.currency_amount)
       : null;
-    if (!sourceLine || !sourceLine.label || !sourceLine.unit ||
+    if (!sourceLine || !sourceLine.label || sourceLine.label === PENNYLANE_SHIPPING_LABEL ||
+      !sourceLine.unit ||
       !Number.isInteger(sourceQuantity) || sourceQuantity < line.quantity ||
       sourceUnitAmount !== line.unitAmount || sourceAmount !== line.unitAmount * sourceQuantity ||
       sourceLine.vat_rate !== PENNYLANE_EXEMPT_VAT_RATE) {
       throw new PennylaneSyncError({ code: "PENNYLANE_SOURCE_INVOICE_LINE_MISMATCH" });
     }
-    return { sourceLine, quantity: line.quantity, unitAmount: line.unitAmount };
+    return {
+      sourceLine,
+      quantity: line.quantity,
+      unitAmount: line.unitAmount,
+      rawUnitPrice: sourceLine.raw_currency_unit_price as string,
+    };
   });
+  if (normalizedShippingRefundAmount > 0) {
+    const shippingLines = sourceLines.filter((line) => line.label === PENNYLANE_SHIPPING_LABEL);
+    const shippingLine = shippingLines[0];
+    const shippingQuantity = Number(shippingLine?.quantity);
+    const shippingUnitAmount = shippingLine?.raw_currency_unit_price
+      ? parseEuroAmountToCents(shippingLine.raw_currency_unit_price)
+      : null;
+    const shippingLineAmount = shippingLine?.currency_amount
+      ? parseEuroAmountToCents(shippingLine.currency_amount)
+      : null;
+    if (shippingLines.length !== 1 || !shippingLine || shippingLine.unit !== "piece" ||
+      shippingQuantity !== 1 || shippingUnitAmount !== shippingAmountPaid ||
+      shippingLineAmount !== shippingAmountPaid ||
+      shippingLine.vat_rate !== PENNYLANE_EXEMPT_VAT_RATE) {
+      throw new PennylaneSyncError({ code: "PENNYLANE_SOURCE_SHIPPING_LINE_MISMATCH" });
+    }
+    expectedLines.push({
+      sourceLine: shippingLine,
+      quantity: 1,
+      unitAmount: normalizedShippingRefundAmount,
+      rawUnitPrice: formatUnitPrice(normalizedShippingRefundAmount, 1),
+    });
+  }
 
   const externalReference = `${STRIPE_REFUND_REFERENCE_PREFIX}${refundId}`;
   const verifyExisting = async (listedCreditNote: PennylaneInvoice) => {
@@ -2052,11 +2142,11 @@ export async function syncMultiLineRefundToPennylane({
     customer_id: customerId, date: creditNoteDate, deadline: creditNoteDate,
     currency: currency.toUpperCase(), draft: false,
     special_mention: VAT_EXEMPTION_MENTION, external_reference: externalReference,
-    invoice_lines: expectedLines.map(({ sourceLine, quantity }) => ({
+    invoice_lines: expectedLines.map(({ sourceLine, quantity, rawUnitPrice }) => ({
       label: sourceLine.label,
       quantity,
       unit: sourceLine.unit,
-      raw_currency_unit_price: negatePennylaneUnitPrice(sourceLine.raw_currency_unit_price as string),
+      raw_currency_unit_price: negatePennylaneUnitPrice(rawUnitPrice),
       vat_rate: PENNYLANE_EXEMPT_VAT_RATE,
     })),
   };
@@ -2096,10 +2186,6 @@ export async function syncPaidCheckoutSessionToPennylane({
     status: "start" | "success",
     details?: Record<string, string | number | boolean | null>,
   ) => onProgress?.({ stage, status, details });
-
-  progress("verify_pennylane_environment", "start");
-  const environment = await inspectPennylaneEnvironment(token);
-  progress("verify_pennylane_environment", "success", { sandbox: environment.isSandbox });
 
   const session = await runStripeRequest(
     "stripe.checkout.sessions.retrieve",
@@ -2143,13 +2229,29 @@ export async function syncPaidCheckoutSessionToPennylane({
       (total, lineItem) => total + lineItem.amount_total,
       0,
     );
+    let shipping: PersistedOrderShippingInput | null;
 
-    if (stripeLineItemsTotal !== session.amount_total) {
+    try {
+      shipping = resolveCheckoutShipping(session, stripeLineItemsTotal);
+    } catch (error) {
+      throw new PennylaneSyncError({
+        code: error instanceof Error ? error.message : "INVALID_STRIPE_SHIPPING_DATA",
+      });
+    }
+
+    if (shipping === null && stripeLineItemsTotal !== session.amount_total) {
       throw new PennylaneSyncError({ code: "STRIPE_SESSION_TOTAL_MISMATCH" });
     }
 
     const preparedLines = buildInvoiceLines(lineItems, sessionCurrency, requiresSchemaV1Mapping);
-    progress("prepare_invoice_lines", "success", { line_count: lineItems.length });
+    if (shipping && shipping.shippingAmount > 0) {
+      preparedLines.invoiceLines.push(buildShippingInvoiceLine(shipping.shippingAmount));
+    }
+    preparedLines.shipping = shipping;
+    progress("prepare_invoice_lines", "success", {
+      line_count: lineItems.length,
+      shipping_line: Boolean(shipping && shipping.shippingAmount > 0),
+    });
     return preparedLines;
   };
 
@@ -2158,6 +2260,10 @@ export async function syncPaidCheckoutSessionToPennylane({
   if (requiresSchemaV1Mapping) {
     preparedInvoiceLines = await prepareInvoiceLines();
   }
+
+  progress("verify_pennylane_environment", "start");
+  const environment = await inspectPennylaneEnvironment(token);
+  progress("verify_pennylane_environment", "success", { sandbox: environment.isSandbox });
 
   const customerEmail =
     (session.customer_details?.email ?? session.customer_email)?.trim().toLowerCase() ?? null;
@@ -2186,6 +2292,7 @@ export async function syncPaidCheckoutSessionToPennylane({
       token,
       invoiceId,
       preparedInvoiceLines?.orderLineMappings ?? [],
+      preparedInvoiceLines?.shipping ?? null,
     );
     progress("map_pennylane_invoice_lines", "success", { line_count: orderLineMappings.length });
     progress("pennylane_sync", "success", { result: "already_exists" });
@@ -2201,6 +2308,7 @@ export async function syncPaidCheckoutSessionToPennylane({
       markAsPaid,
       email: { status: "skipped_existing_invoice" },
       orderLineMappings,
+      shipping: preparedInvoiceLines?.shipping ?? null,
       createdAt,
     };
   }
@@ -2213,7 +2321,7 @@ export async function syncPaidCheckoutSessionToPennylane({
   }
 
   preparedInvoiceLines ??= await prepareInvoiceLines();
-  const { invoiceLines, orderLineMappings } = preparedInvoiceLines;
+  const { invoiceLines, orderLineMappings, shipping } = preparedInvoiceLines;
   progress("find_or_create_customer", "start");
   const existingCustomer = await findCustomer(token, customerEmail);
   const customerId = existingCustomer
@@ -2269,6 +2377,7 @@ export async function syncPaidCheckoutSessionToPennylane({
         token,
         invoiceId,
         orderLineMappings,
+        shipping,
       );
       progress("map_pennylane_invoice_lines", "success", {
         line_count: persistedOrderLineMappings.length,
@@ -2286,6 +2395,7 @@ export async function syncPaidCheckoutSessionToPennylane({
         markAsPaid,
         email: { status: "skipped_existing_invoice" },
         orderLineMappings: persistedOrderLineMappings,
+        shipping,
         createdAt,
       };
     }
@@ -2321,6 +2431,7 @@ export async function syncPaidCheckoutSessionToPennylane({
     token,
     invoiceId,
     orderLineMappings,
+    shipping,
   );
   progress("map_pennylane_invoice_lines", "success", {
     line_count: persistedOrderLineMappings.length,
@@ -2338,6 +2449,7 @@ export async function syncPaidCheckoutSessionToPennylane({
     markAsPaid,
     email,
     orderLineMappings: persistedOrderLineMappings,
+    shipping,
     createdAt,
   };
 }

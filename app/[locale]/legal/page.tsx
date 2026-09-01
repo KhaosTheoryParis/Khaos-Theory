@@ -4,6 +4,7 @@ import { getDictionary } from "../../i18n";
 import { isLocale } from "../../i18n/config";
 import PublicFooter from "../../public/public-footer";
 import PublicHeader from "../../public/public-header";
+import { localizedPublicMetadata } from "../../public/public-seo";
 
 const legalIdentity = {
   publisher: "EI - Vincent GÉRARD",
@@ -42,7 +43,8 @@ type LocalizedLegalPageProps = {
 export async function generateMetadata({ params }: LocalizedLegalPageProps): Promise<Metadata> {
   const { locale } = await params;
   if (!isLocale(locale)) return {};
-  return { title: getDictionary(locale).metadata.legalTitle };
+  const metadata = getDictionary(locale).metadata;
+  return localizedPublicMetadata({ locale, route: "legal", title: metadata.legalTitle, description: metadata.legalDescription });
 }
 
 export default async function LocalizedLegalPage({ params }: LocalizedLegalPageProps) {

@@ -69,8 +69,8 @@ test("a Stripe timeout remains controlled and is traced without sensitive detail
 
 test("D1 reservation cannot occur before successful Stripe order validation", () => {
   const route = readFileSync("app/api/admin/refunds/route.ts", "utf8");
-  const validation = route.indexOf("await validateStripeOrder(stripe, contexts)");
-  const reservation = route.indexOf("reserveRefundOperationLines(", validation);
+  const validation = route.indexOf("await validateStripeOrder(stripe, contexts, orderContext)");
+  const reservation = route.indexOf('traceAdminRefundStep("d1.reserveRefundOperation"', validation);
 
   assert.notEqual(validation, -1);
   assert.notEqual(reservation, -1);
