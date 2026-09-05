@@ -366,7 +366,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       >
         {dictionary.checkout.confirmAndPay}
       </button>
-      {initializationFailed ? (
+      {initializationFailed || gate.status === "error" ? (
         <button className="checkout-retry-button" type="button" onClick={retryInitialization}>
           {dictionary.checkout.retryCheckout}
         </button>
@@ -391,21 +391,26 @@ export async function runAuthoritativeShippingUpdate(
 ): Promise<ShippingUpdateResult> {
   let responseStatus = 0;
   let responseBody: unknown;
-  const result = await actions.runServerUpdate(async () => {
-    const response = await fetcher("/api/checkout/update-shipping", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        checkoutSessionId: config.checkoutSessionId,
-        clientSecret: config.clientSecret,
-        shippingDetails,
-      }),
+  let result: Awaited<ReturnType<typeof actions.runServerUpdate>>;
+  try {
+    result = await actions.runServerUpdate(async () => {
+      const response = await fetcher("/api/checkout/update-shipping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkoutSessionId: config.checkoutSessionId,
+          clientSecret: config.clientSecret,
+          shippingDetails,
+        }),
+      });
+      responseStatus = response.status;
+      responseBody = await response.json() as unknown;
+      if (!response.ok) throw new Error("CHECKOUT_SHIPPING_UPDATE_REJECTED");
+      return responseBody;
     });
-    responseStatus = response.status;
-    responseBody = await response.json() as unknown;
-    if (!response.ok) throw new Error("CHECKOUT_SHIPPING_UPDATE_REJECTED");
-    return responseBody;
-  });
+  } catch {
+    return { ok: false, reason: responseStatus === 422 ? "ineligible" : "error" };
+  }
 
   if (result.type !== "success") {
     return { ok: false, reason: responseStatus === 422 ? "ineligible" : "error" };

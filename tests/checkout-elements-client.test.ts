@@ -114,6 +114,12 @@ test("runServerUpdate sends only session proof and address, never browser financ
   assert.equal(result.ok, true);
   assert.deepEqual(Object.keys(requestBody as object).sort(), ["checkoutSessionId", "clientSecret", "shippingDetails"]);
   assert.doesNotMatch(JSON.stringify(requestBody), /productsSubtotal|shippingAmount|\btotal\b|shippingZone|\bprice\b/);
+
+  let gate = invalidateCheckoutAddress(createCheckoutElementsGate("cart"), true);
+  assert.equal(gate.status, "checking");
+  gate = finishCheckoutAddressValidation(gate, gate.addressRevision, "eligible");
+  assert.equal(gate.status, "eligible");
+  assert.equal(canConfirmCheckoutElements(gate, "cart", true), true);
 });
 
 test("server rejection is propagated as an ineligible shipping gate", async () => {
@@ -151,7 +157,48 @@ test("a server update failure cannot leave confirmation enabled", async () => {
 
   let gate = invalidateCheckoutAddress(createCheckoutElementsGate("cart"), true);
   gate = finishCheckoutAddressValidation(gate, gate.addressRevision, result.ok ? "eligible" : result.reason);
+  assert.equal(gate.status, "error");
   assert.equal(canConfirmCheckoutElements(gate, "cart", true), false);
+});
+
+test("a rejected network update leaves checking and can be retried", async () => {
+  const networkFailure = {
+    runServerUpdate: async (callback: () => Promise<unknown>) => {
+      await callback();
+      return { type: "success" as const, session: checkoutSession() };
+    },
+  };
+  const failedResult = await runAuthoritativeShippingUpdate(
+    networkFailure,
+    config,
+    shippingDetails,
+    async () => {
+      throw new TypeError("Failed to fetch");
+    },
+  );
+  assert.deepEqual(failedResult, { ok: false, reason: "error" });
+
+  let gate = invalidateCheckoutAddress(createCheckoutElementsGate("cart"), true);
+  gate = finishCheckoutAddressValidation(gate, gate.addressRevision, failedResult.ok ? "eligible" : failedResult.reason);
+  assert.equal(gate.status, "error");
+  assert.equal(canConfirmCheckoutElements(gate, "cart", true), false);
+
+  const retryActions = {
+    runServerUpdate: async (callback: () => Promise<unknown>) => {
+      await callback();
+      return { type: "success" as const, session: checkoutSession() };
+    },
+  };
+  const retryResult = await runAuthoritativeShippingUpdate(
+    retryActions,
+    config,
+    shippingDetails,
+    async () => Response.json({ updated: true, shippingAmount: 1_000, amountTotal: 26_000, currency: "eur" }),
+  );
+  gate = invalidateCheckoutAddress(gate, true);
+  gate = finishCheckoutAddressValidation(gate, gate.addressRevision, retryResult.ok ? "eligible" : retryResult.reason);
+  assert.equal(gate.status, "eligible");
+  assert.equal(canConfirmCheckoutElements(gate, "cart", true), true);
 });
 
 test("incomplete and changed addresses invalidate confirmation, including stale async results", () => {
@@ -211,6 +258,7 @@ test("the FR and EN Elements UI use the modern typed API and no deprecated callb
   assert.match(source, /checkoutInitializationError/);
   assert.match(source, /retryInitialization/);
   assert.match(source, /checkout-retry-button/);
+  assert.match(source, /initializationFailed \|\| gate\.status === "error"/);
   assert.doesNotMatch(source, /onShippingDetailsChange|EmbeddedCheckout|console\./);
   assert.doesNotMatch(source, /STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET|PENNYLANE_API_TOKEN|CLOUDFLARE_ACCESS_AUD/);
   assert.equal(fr.checkout.shippingAddress, "Adresse de livraison");
