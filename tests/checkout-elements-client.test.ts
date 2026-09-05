@@ -65,10 +65,14 @@ test("the inactive Elements checkout renders localized FR and EN structure with 
   assert.match(frHtml, /Adresse de livraison/);
   assert.match(frHtml, /Le prix de l’expédition sera calculé après la saisie de votre adresse de livraison\./);
   assert.match(frHtml, /Adresse de facturation/);
+  assert.match(frHtml, />E-mail</);
+  assert.match(frHtml, /Champ obligatoire\./);
   assert.match(frHtml, /Paiement sécurisé/);
   assert.match(enHtml, /Shipping address/);
   assert.match(enHtml, /Shipping costs will be calculated after you enter your delivery address\./);
   assert.match(enHtml, /Billing address/);
+  assert.match(enHtml, />Email</);
+  assert.match(enHtml, /Required field\./);
   assert.match(enHtml, /Secure payment/);
   assert.match(frHtml, /checkout-elements--initializing/);
   assert.match(frHtml, /aria-busy="true"/);
@@ -245,14 +249,16 @@ test("starting confirmation closes the gate synchronously against a second click
   assert.equal(canConfirmCheckoutElements(started!, cartKey, true), false);
 });
 
-test("required billing completion remains part of Stripe canConfirm authority", () => {
+test("required billing and email completion remain part of Stripe canConfirm authority", () => {
   const cartKey = "geometry:48:1";
   let gate = invalidateCheckoutAddress(createCheckoutElementsGate(cartKey), true);
   gate = finishCheckoutAddressValidation(gate, gate.addressRevision, "eligible");
+  const stripeCanConfirmWithMissingOrInvalidEmail = false;
+  const stripeCanConfirmWithValidEmailAndOtherElementsComplete = true;
 
-  assert.equal(canConfirmCheckoutElements(gate, cartKey, false), false);
-  assert.equal(beginCheckoutConfirmation(gate, cartKey, false), null);
-  assert.equal(canConfirmCheckoutElements(gate, cartKey, true), true);
+  assert.equal(canConfirmCheckoutElements(gate, cartKey, stripeCanConfirmWithMissingOrInvalidEmail), false);
+  assert.equal(beginCheckoutConfirmation(gate, cartKey, stripeCanConfirmWithMissingOrInvalidEmail), null);
+  assert.equal(canConfirmCheckoutElements(gate, cartKey, stripeCanConfirmWithValidEmailAndOtherElementsComplete), true);
 });
 
 test("the FR and EN Elements UI use the modern typed API and no deprecated callback", () => {
@@ -284,6 +290,10 @@ test("the FR and EN Elements UI use the modern typed API and no deprecated callb
   assert.equal(en.checkout.shippingAddress, "Shipping address");
   assert.equal(fr.checkout.billingAddress, "Adresse de facturation");
   assert.equal(en.checkout.billingAddress, "Billing address");
+  assert.equal(fr.checkout.contactDetails, "E-mail");
+  assert.equal(fr.checkout.contactDetailsRequired, "Champ obligatoire.");
+  assert.equal(en.checkout.contactDetails, "Email");
+  assert.equal(en.checkout.contactDetailsRequired, "Required field.");
   assert.equal(fr.checkout.confirmAndPay, "KONFIRM & PAY");
   assert.equal(en.checkout.confirmAndPay, "KONFIRM & PAY");
 });

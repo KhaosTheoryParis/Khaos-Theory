@@ -253,7 +253,8 @@
   letter-spacing: 0.08em;
 }
 
-.localized-public .shipping-address-hint {
+.localized-public .shipping-address-hint,
+.localized-public .stripe-element-hint {
   margin: 0 0 18px;
   color: #bdbdbd;
   font-size: 14px;

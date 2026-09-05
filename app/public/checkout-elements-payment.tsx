@@ -348,6 +348,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       </section>
       <section className="stripe-element-section" aria-label={dictionary.checkout.contactDetails}>
         <h2>{dictionary.checkout.contactDetails}</h2>
+        <p className="stripe-element-hint">{dictionary.checkout.contactDetailsRequired}</p>
         <div ref={contactMountRef} className="stripe-element-mount" />
       </section>
       <section className="stripe-element-section" aria-label={dictionary.checkout.paymentDetails}>
