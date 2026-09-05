@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Locale } from "../i18n/config";
 import { getDictionary } from "../i18n";
 import { localizedHref, type LocalizedRoute, type LocalizedRouteOptions } from "../i18n/routes";
@@ -16,6 +19,23 @@ const HEADER_LANGUAGES = [
 export default function PublicHeader({ locale, currentRoute = "home", currentRouteOptions }: PublicHeaderProps) {
   const dictionary = getDictionary(locale);
   const activeLanguage = HEADER_LANGUAGES.find((language) => language.locale === locale) ?? HEADER_LANGUAGES[0];
+  const languageMenuRef = useRef<HTMLDetailsElement>(null);
+  const [languageOpen, setLanguageOpen] = useState(false);
+
+  useEffect(() => {
+    if (!languageOpen) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (!languageMenuRef.current?.contains(event.target as Node)) setLanguageOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [languageOpen]);
+
+  function handleLanguageKeyDown(event: KeyboardEvent<HTMLDetailsElement>) {
+    if (event.key !== "Escape") return;
+    setLanguageOpen(false);
+    languageMenuRef.current?.querySelector("summary")?.focus();
+  }
 
   return (
     <header>
@@ -44,7 +64,13 @@ export default function PublicHeader({ locale, currentRoute = "home", currentRou
             </a>
           </nav>
         </div>
-        <details className="language-menu">
+        <details
+          ref={languageMenuRef}
+          className="language-menu"
+          open={languageOpen}
+          onToggle={(event) => setLanguageOpen(event.currentTarget.open)}
+          onKeyDown={handleLanguageKeyDown}
+        >
           <summary aria-label={dictionary.language.switcherLabel}>
             <span className="language-menu-flag" aria-hidden="true">{activeLanguage.flag}</span>
             <span>{activeLanguage.code}</span>
@@ -57,6 +83,7 @@ export default function PublicHeader({ locale, currentRoute = "home", currentRou
                   href={localizedHref(language.locale, currentRoute, currentRouteOptions)}
                   lang={language.locale}
                   aria-current={locale === language.locale ? "page" : undefined}
+                  onClick={() => setLanguageOpen(false)}
                 >
                   <span aria-hidden="true">{language.flag}</span>
                   <span>{language.label}</span>

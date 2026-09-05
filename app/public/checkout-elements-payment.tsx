@@ -334,6 +334,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     >
       <fieldset className="shipping-address">
         <legend>{dictionary.checkout.shippingAddress}</legend>
+        {shippingAmount === null ? <p className="shipping-address-hint">{dictionary.checkout.shippingAddressHint}</p> : null}
         <div ref={shippingMountRef} className="stripe-element-mount" />
       </fieldset>
       <section className="stripe-element-section" aria-label={dictionary.checkout.contactDetails}>

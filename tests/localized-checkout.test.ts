@@ -109,6 +109,28 @@ test("French and English preserve complete Checkout and Legal dictionary parity"
   assert.deepEqual(Object.keys(fr.legal).sort(), Object.keys(en.legal).sort());
 });
 
+test("French checkout copy uses Panier while English copy remains unchanged", () => {
+  const frenchCartCopy = [
+    fr.navigation.cart,
+    fr.product.addToKart,
+    fr.product.addedToKart,
+    fr.product.cartUnavailable,
+    fr.checkout.yourKart,
+    fr.checkout.empty,
+    fr.checkout.invalidCart,
+    fr.checkout.loading,
+    fr.checkout.cartUpdateError,
+    fr.metadata.checkoutTitle,
+  ].join(" ");
+
+  assert.doesNotMatch(frenchCartCopy, /\bkart\b/i);
+  assert.equal(fr.home.scrollCue, "Faire défiler pour découvrir");
+  assert.match(fr.about.message, /À travers ses bijoux/);
+  assert.equal(en.home.scrollCue, "Scroll to explore");
+  assert.equal(en.navigation.cart, "MY KART");
+  assert.equal(en.checkout.yourKart, "YOUR KART");
+});
+
 test("checkout keeps its cart on a local persistence failure and exposes only a recoverable message", () => {
   const source = readFileSync("app/public/checkout-client.tsx", "utf8");
 

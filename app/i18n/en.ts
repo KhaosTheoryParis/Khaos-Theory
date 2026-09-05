@@ -81,6 +81,7 @@ export const en = {
     loading: "Loading your kart…",
     cartUpdateError: "Unable to update your KART. Please try again.",
     shippingAddress: "Shipping address",
+    shippingAddressHint: "Shipping costs will be calculated after you enter your delivery address.",
     shipping: "Shipping",
     freeShipping: "Free shipping",
     checkingAddress: "Checking address...",

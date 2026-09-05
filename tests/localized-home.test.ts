@@ -90,3 +90,15 @@ test("localized public styles retain visible focus, readable disabled states and
   assert.match(css, /\.localized-public \.stripe-checkout-button:disabled \{[\s\S]*?opacity: 0\.6;/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
+
+test("the language selector closes outside the menu and keeps a borderless focusable control", () => {
+  const source = readFileSync("app/public/public-header.tsx", "utf8");
+  const css = readFileSync("app/[locale]/localized-home.css", "utf8");
+  const summaryStyles = css.match(/\.localized-public \.language-menu summary \{[\s\S]*?\}/)?.[0] ?? "";
+
+  assert.match(source, /document\.addEventListener\("pointerdown"/);
+  assert.match(source, /languageMenuRef\.current\?\.contains\(event\.target as Node\)/);
+  assert.match(source, /event\.key !== "Escape"/);
+  assert.match(summaryStyles, /border:\s*0/);
+  assert.match(source, /<summary aria-label=\{dictionary\.language\.switcherLabel\}>/);
+});

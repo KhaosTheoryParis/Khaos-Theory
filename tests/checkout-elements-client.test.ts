@@ -63,8 +63,10 @@ test("the inactive Elements checkout renders localized FR and EN structure with 
   const enHtml = renderToStaticMarkup(createElement(CheckoutElementsPayment, { cart, locale: "en", dictionary: en }));
 
   assert.match(frHtml, /Adresse de livraison/);
+  assert.match(frHtml, /Le prix de l’expédition sera calculé après la saisie de votre adresse de livraison\./);
   assert.match(frHtml, /Paiement sécurisé/);
   assert.match(enHtml, /Shipping address/);
+  assert.match(enHtml, /Shipping costs will be calculated after you enter your delivery address\./);
   assert.match(enHtml, /Secure payment/);
   assert.match(frHtml, /checkout-elements--initializing/);
   assert.match(frHtml, /aria-busy="true"/);

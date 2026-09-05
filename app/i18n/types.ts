@@ -75,6 +75,7 @@ export type TranslationDictionary = {
     loading: string;
     cartUpdateError: string;
     shippingAddress: string;
+    shippingAddressHint: string;
     shipping: string;
     freeShipping: string;
     checkingAddress: string;
