@@ -12,6 +12,8 @@ import { quoteShipping } from "./shipping";
 export const CHECKOUT_ELEMENTS_FLOW = "khaos_fr_shipping_elements_v1";
 export const CHECKOUT_STRIPE_TIMEOUT_MS = 10_000;
 export const CHECKOUT_STRIPE_MAX_NETWORK_RETRIES = 0;
+const CHECKOUT_CLIENT_SECRET_MAX_LENGTH = 512;
+const CHECKOUT_CLIENT_SECRET_MIN_SUFFIX_LENGTH = 16;
 
 export type CheckoutSessionUpdateParams = NonNullable<Parameters<Stripe["checkout"]["sessions"]["update"]>[1]>;
 type CheckoutShippingDetailsParam = NonNullable<
@@ -106,20 +108,29 @@ export function parseCheckoutShippingUpdateBody(value: unknown): CheckoutShippin
   if (!isRecord(value) || !hasExactKeys(value, ["checkoutSessionId", "clientSecret", "shippingDetails"])) {
     return null;
   }
+
+  const { checkoutSessionId, clientSecret, shippingDetails } = value;
   if (
-    typeof value.checkoutSessionId !== "string" ||
-    !/^cs_test_[A-Za-z0-9_]+$/u.test(value.checkoutSessionId) ||
-    value.checkoutSessionId.length > 255 ||
-    typeof value.clientSecret !== "string" ||
-    !/^cs_test_[A-Za-z0-9_]+_secret_[A-Za-z0-9_]+$/u.test(value.clientSecret) ||
-    value.clientSecret.length > 512 ||
-    !isRecord(value.shippingDetails) ||
-    !hasExactKeys(value.shippingDetails, ["address", "name"])
+    typeof checkoutSessionId !== "string" ||
+    !/^cs_test_[A-Za-z0-9_]+$/u.test(checkoutSessionId) ||
+    checkoutSessionId.length > 255
   ) {
     return null;
   }
 
-  const { name, address } = value.shippingDetails;
+  const clientSecretPrefix = `${checkoutSessionId}_secret_`;
+  if (
+    typeof clientSecret !== "string" ||
+    !clientSecret.startsWith(clientSecretPrefix) ||
+    clientSecret.length < clientSecretPrefix.length + CHECKOUT_CLIENT_SECRET_MIN_SUFFIX_LENGTH ||
+    clientSecret.length > CHECKOUT_CLIENT_SECRET_MAX_LENGTH ||
+    !isRecord(shippingDetails) ||
+    !hasExactKeys(shippingDetails, ["address", "name"])
+  ) {
+    return null;
+  }
+
+  const { name, address } = shippingDetails;
   if (
     typeof name !== "string" ||
     name.trim().length === 0 ||
@@ -138,8 +149,8 @@ export function parseCheckoutShippingUpdateBody(value: unknown): CheckoutShippin
   }
 
   return {
-    checkoutSessionId: value.checkoutSessionId,
-    clientSecret: value.clientSecret,
+    checkoutSessionId,
+    clientSecret,
     shippingDetails: {
       name: name.trim(),
       address: {

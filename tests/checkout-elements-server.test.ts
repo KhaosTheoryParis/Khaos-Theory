@@ -5,6 +5,7 @@ import type Stripe from "stripe";
 import { handleCheckoutShippingUpdate, handleCreateCheckoutSession } from "../app/services/checkout-elements-http";
 import {
   CHECKOUT_ELEMENTS_FLOW,
+  parseCheckoutShippingUpdateBody,
   type CheckoutSessionUpdateParams,
   type CreateCheckoutSessionPort,
   type UpdateCheckoutSessionPort,
@@ -13,7 +14,7 @@ import {
 const CREATE_URL = "https://example.test/api/create-checkout-session";
 const UPDATE_URL = "https://example.test/api/checkout/update-shipping";
 const SESSION_ID = "cs_test_khaosElements";
-const CLIENT_SECRET = `${SESSION_ID}_secret_not_real`;
+const CLIENT_SECRET = `${SESSION_ID}_secret_opaque-token.with:punctuation`;
 
 function jsonRequest(url: string, body: unknown) {
   return new Request(url, {
@@ -297,6 +298,44 @@ function shippingBody(postalCode = "75001", city = "Paris") {
     },
   };
 }
+
+test("update body parser accepts an opaque bounded Stripe capability only for the matching session", () => {
+  assert.ok(parseCheckoutShippingUpdateBody(shippingBody()));
+
+  const clientSecretPrefix = `${SESSION_ID}_secret_`;
+  for (const body of [
+    { ...shippingBody(), checkoutSessionId: "cs_test_anotherSession" },
+    { ...shippingBody(), clientSecret: "" },
+    { ...shippingBody(), clientSecret: clientSecretPrefix },
+    { ...shippingBody(), clientSecret: `${clientSecretPrefix}too-short` },
+    { ...shippingBody(), clientSecret: `${clientSecretPrefix}${"x".repeat(513)}` },
+  ]) {
+    assert.equal(parseCheckoutShippingUpdateBody(body), null);
+  }
+});
+
+test("server still compares the opaque capability with the retrieved Stripe session", async () => {
+  const dependencies = updateDependencies({
+    session: openSession(25_000, {
+      client_secret: `${SESSION_ID}_secret_another-opaque.capability`,
+    }),
+  });
+  let lineItemReads = 0;
+  dependencies.stripe.listLineItems = async () => {
+    lineItemReads += 1;
+    throw new Error("line items must not be read for a capability mismatch");
+  };
+
+  const response = await handleCheckoutShippingUpdate(
+    jsonRequest(UPDATE_URL, shippingBody()),
+    dependencies,
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { updated: false });
+  assert.equal(lineItemReads, 0);
+  assert.equal(dependencies.updates.length, 0);
+});
 
 test("server update validates Paris and adds the exact authoritative 10 euro shipping amount", async () => {
   const dependencies = updateDependencies();
