@@ -87,6 +87,7 @@ export const en = {
     checkingAddress: "Checking address...",
     ineligibleAddress: "This address is not eligible for shipping",
     shippingQuoteError: "Unable to check this address. Please try again.",
+    billingAddress: "Billing address",
     contactDetails: "Contact details",
     paymentDetails: "Secure payment",
     securePayment: "Secure Stripe payment",

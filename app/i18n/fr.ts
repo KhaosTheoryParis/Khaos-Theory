@@ -87,6 +87,7 @@ export const fr = {
     checkingAddress: "Vérification de l’adresse...",
     ineligibleAddress: "Adresse non éligible à la livraison",
     shippingQuoteError: "Impossible de vérifier l’adresse. Réessayez.",
+    billingAddress: "Adresse de facturation",
     contactDetails: "Coordonnées",
     paymentDetails: "Paiement sécurisé",
     securePayment: "Paiement Stripe sécurisé",

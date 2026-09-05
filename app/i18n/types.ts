@@ -81,6 +81,7 @@ export type TranslationDictionary = {
     checkingAddress: string;
     ineligibleAddress: string;
     shippingQuoteError: string;
+    billingAddress: string;
     contactDetails: string;
     paymentDetails: string;
     securePayment: string;

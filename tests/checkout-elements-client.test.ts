@@ -64,9 +64,11 @@ test("the inactive Elements checkout renders localized FR and EN structure with 
 
   assert.match(frHtml, /Adresse de livraison/);
   assert.match(frHtml, /Le prix de l’expédition sera calculé après la saisie de votre adresse de livraison\./);
+  assert.match(frHtml, /Adresse de facturation/);
   assert.match(frHtml, /Paiement sécurisé/);
   assert.match(enHtml, /Shipping address/);
   assert.match(enHtml, /Shipping costs will be calculated after you enter your delivery address\./);
+  assert.match(enHtml, /Billing address/);
   assert.match(enHtml, /Secure payment/);
   assert.match(frHtml, /checkout-elements--initializing/);
   assert.match(frHtml, /aria-busy="true"/);
@@ -243,13 +245,28 @@ test("starting confirmation closes the gate synchronously against a second click
   assert.equal(canConfirmCheckoutElements(started!, cartKey, true), false);
 });
 
+test("required billing completion remains part of Stripe canConfirm authority", () => {
+  const cartKey = "geometry:48:1";
+  let gate = invalidateCheckoutAddress(createCheckoutElementsGate(cartKey), true);
+  gate = finishCheckoutAddressValidation(gate, gate.addressRevision, "eligible");
+
+  assert.equal(canConfirmCheckoutElements(gate, cartKey, false), false);
+  assert.equal(beginCheckoutConfirmation(gate, cartKey, false), null);
+  assert.equal(canConfirmCheckoutElements(gate, cartKey, true), true);
+});
+
 test("the FR and EN Elements UI use the modern typed API and no deprecated callback", () => {
   const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
   assert.match(source, /@stripe\/stripe-js\/pure/);
   assert.match(source, /initCheckoutElementsSdk/);
   assert.match(source, /createShippingAddressElement/);
+  assert.match(source, /createBillingAddressElement/);
+  assert.match(source, /billingElement\.mount\(billingMountRef\.current\)/);
+  assert.match(source, /billingElement\?\.destroy\(\)/);
   assert.match(source, /createContactDetailsElement/);
   assert.match(source, /createPaymentElement/);
+  assert.match(source, /sdk\.on\("change"/);
+  assert.match(source, /setStripeCanConfirm\(session\.canConfirm\)/);
   assert.match(source, /runServerUpdate/);
   assert.match(source, /validateElements/);
   assert.match(source, /\.confirm\(\{ redirect: "always" \}\)/);
@@ -265,6 +282,8 @@ test("the FR and EN Elements UI use the modern typed API and no deprecated callb
   assert.doesNotMatch(source, /STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET|PENNYLANE_API_TOKEN|CLOUDFLARE_ACCESS_AUD/);
   assert.equal(fr.checkout.shippingAddress, "Adresse de livraison");
   assert.equal(en.checkout.shippingAddress, "Shipping address");
+  assert.equal(fr.checkout.billingAddress, "Adresse de facturation");
+  assert.equal(en.checkout.billingAddress, "Billing address");
   assert.equal(fr.checkout.confirmAndPay, "KONFIRM & PAY");
   assert.equal(en.checkout.confirmAndPay, "KONFIRM & PAY");
 });

@@ -56,6 +56,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
   const [initializationAttempt, setInitializationAttempt] = useState(0);
   const [initializationFailed, setInitializationFailed] = useState(false);
   const shippingMountRef = useRef<HTMLDivElement>(null);
+  const billingMountRef = useRef<HTMLDivElement>(null);
   const contactMountRef = useRef<HTMLDivElement>(null);
   const paymentMountRef = useRef<HTMLDivElement>(null);
 
@@ -82,6 +83,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     let active = true;
     let checkoutSdk: StripeCheckoutElementsSdk | null = null;
     let shippingElement: StripeAddressElement | null = null;
+    let billingElement: StripeAddressElement | null = null;
     let contactElement: ReturnType<StripeCheckoutElementsSdk["createContactDetailsElement"]> | null = null;
     let paymentElement: ReturnType<StripeCheckoutElementsSdk["createPaymentElement"]> | null = null;
     let addressHandler: ((event: StripeAddressElementChangeEvent) => void) | null = null;
@@ -106,12 +108,14 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
         const sdk = stripe.initCheckoutElementsSdk({ clientSecret: config.clientSecret });
         checkoutSdk = sdk;
         shippingElement = sdk.createShippingAddressElement({ display: { name: "full" } });
+        billingElement = sdk.createBillingAddressElement({ display: { name: "full" } });
         contactElement = sdk.createContactDetailsElement();
         paymentElement = sdk.createPaymentElement();
-        if (!shippingMountRef.current || !contactMountRef.current || !paymentMountRef.current) {
+        if (!shippingMountRef.current || !billingMountRef.current || !contactMountRef.current || !paymentMountRef.current) {
           throw new Error("CHECKOUT_ELEMENT_MOUNT_UNAVAILABLE");
         }
         shippingElement.mount(shippingMountRef.current);
+        billingElement.mount(billingMountRef.current);
         contactElement.mount(contactMountRef.current);
         paymentElement.mount(paymentMountRef.current);
 
@@ -216,6 +220,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
       if (shippingElement && addressHandler) shippingElement.off("change", addressHandler);
       shippingElement?.destroy();
+      billingElement?.destroy();
       contactElement?.destroy();
       paymentElement?.destroy();
       actionsRef.current = null;
@@ -337,6 +342,10 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
         {shippingAmount === null ? <p className="shipping-address-hint">{dictionary.checkout.shippingAddressHint}</p> : null}
         <div ref={shippingMountRef} className="stripe-element-mount" />
       </fieldset>
+      <section className="stripe-element-section" aria-label={dictionary.checkout.billingAddress}>
+        <h2>{dictionary.checkout.billingAddress}</h2>
+        <div ref={billingMountRef} className="stripe-element-mount" />
+      </section>
       <section className="stripe-element-section" aria-label={dictionary.checkout.contactDetails}>
         <h2>{dictionary.checkout.contactDetails}</h2>
         <div ref={contactMountRef} className="stripe-element-mount" />
