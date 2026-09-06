@@ -114,6 +114,14 @@ test("checkout spacing stays compact while preserving a full-size payment target
   assert.match(css, /\.localized-public \.stripe-checkout-button:disabled/);
 });
 
+test("localized French and English homepages retain the animated scroll cue", () => {
+  const css = readFileSync("app/[locale]/localized-home.css", "utf8");
+
+  assert.match(css, /\.localized-public \.scroll::after\s*\{[\s\S]*?animation: scroll-cue 1\.5s ease-in-out infinite;/);
+  assert.match(css, /@keyframes scroll-cue[\s\S]*?transform: translateY\(6px\) rotate\(45deg\);/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
 test("the language selector closes outside the menu and keeps a borderless focusable control", () => {
   const source = readFileSync("app/public/public-header.tsx", "utf8");
   const css = readFileSync("app/[locale]/localized-home.css", "utf8");

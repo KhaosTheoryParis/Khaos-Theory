@@ -49,6 +49,23 @@
   line-height: 1;
 }
 
+/* Keep the scroll cue animation explicit for both localized homepages. */
+.localized-public .scroll::after {
+  animation: scroll-cue 1.5s ease-in-out infinite;
+}
+
+@keyframes scroll-cue {
+  0%, 100% {
+    opacity: 0.35;
+    transform: translateY(0) rotate(45deg);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(6px) rotate(45deg);
+  }
+}
+
 .localized-public .language-menu {
   position: relative;
   flex: none;
