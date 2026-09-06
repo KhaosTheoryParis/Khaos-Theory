@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   CheckoutElementsDebugPanel,
+  checkoutConfirmFailureDiagnostic,
   checkoutElementsDebugState,
   isCheckoutElementsDebugEnabled,
 } from "../app/public/checkout-elements-payment";
@@ -38,6 +39,10 @@ test("the debug panel exposes only the booleans and gate status from the real co
     confirmEnabled: true,
     confirmStep: "idle",
     confirmErrorType: "none",
+    confirmResultType: "none",
+    confirmStripeErrorType: "none",
+    confirmStripeErrorCode: "none",
+    confirmStripeDeclineCode: "none",
   });
 
   const visible = renderToStaticMarkup(createElement(CheckoutElementsDebugPanel, { enabled: true, state }));
@@ -53,6 +58,10 @@ test("the debug panel exposes only the booleans and gate status from the real co
     "confirmEnabled: true",
     "confirmStep: idle",
     "confirmErrorType: none",
+    "confirmResultType: none",
+    "confirmStripeErrorType: none",
+    "confirmStripeErrorCode: none",
+    "confirmStripeDeclineCode: none",
   ]) {
     assert.match(visible, new RegExp(line));
   }
@@ -77,6 +86,10 @@ test("debug derivation leaves shipping invalidation and the confirmation lock un
     confirmEnabled: false,
     confirmStep: "idle",
     confirmErrorType: "none",
+    confirmResultType: "none",
+    confirmStripeErrorType: "none",
+    confirmStripeErrorCode: "none",
+    confirmStripeDeclineCode: "none",
   });
   assert.equal(beginCheckoutConfirmation(confirming, cartKey, true), null);
 
@@ -96,10 +109,12 @@ test("the post-click diagnostic marks both Stripe awaits without changing the co
   assert.equal(state.isConfirming, true);
   assert.equal(state.confirmStep, "before-confirm");
   assert.equal(state.confirmErrorType, "none");
+  assert.equal(state.confirmResultType, "none");
 
   const visible = renderToStaticMarkup(createElement(CheckoutElementsDebugPanel, { enabled: true, state }));
   assert.match(visible, /confirmStep: before-confirm/);
   assert.match(visible, /confirmErrorType: none/);
+  assert.match(visible, /confirmResultType: none/);
 
   const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
   const beforeValidate = source.indexOf('setConfirmStep("before-validate")');
@@ -120,6 +135,50 @@ test("the post-click diagnostic marks both Stripe awaits without changing the co
   assert.ok(catchStep > afterConfirm);
   assert.ok(finallyStep > catchStep);
   assert.match(source.slice(afterConfirm, finallyStep), /setConfirmErrorType\(confirmPhase\)/);
+});
+
+test("confirm failures expose only bounded Stripe error classifications", () => {
+  const returned = checkoutConfirmFailureDiagnostic({
+    type: "card_error",
+    code: "paymentFailed",
+    message: "raw text must not be surfaced",
+    paymentFailed: { declineCode: "do_not_honor" },
+  }, "error");
+  assert.deepEqual(returned, {
+    confirmResultType: "error",
+    confirmStripeErrorType: "card_error",
+    confirmStripeErrorCode: "paymentFailed",
+    confirmStripeDeclineCode: "do_not_honor",
+  });
+
+  const rejected = checkoutConfirmFailureDiagnostic({
+    name: "IntegrationError",
+    code: "unsafe value with spaces",
+    message: "opaque runtime detail",
+  }, "rejected");
+  assert.deepEqual(rejected, {
+    confirmResultType: "rejected",
+    confirmStripeErrorType: "IntegrationError",
+    confirmStripeErrorCode: "unknown",
+    confirmStripeDeclineCode: "none",
+  });
+  assert.doesNotMatch(JSON.stringify({ returned, rejected }), /raw text|opaque runtime detail/);
+});
+
+test("a rejected Stripe await exits the confirmation lock without retrying automatically", () => {
+  const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
+  const confirm = source.indexOf('await actions.confirm({ redirect: "always" })');
+  const catchStart = source.indexOf("} catch (error) {", confirm);
+  const finallyStart = source.indexOf("} finally {", catchStart);
+  assert.ok(confirm >= 0 && catchStart > confirm && finallyStart > catchStart);
+
+  const catchSource = source.slice(catchStart, finallyStart);
+  assert.match(catchSource, /checkoutConfirmFailureDiagnostic\(error, "rejected"\)/);
+  assert.match(catchSource, /status: "error" as const/);
+  assert.match(catchSource, /validatedAddressRevision: null/);
+  assert.match(catchSource, /dictionary\.checkout\.paymentError/);
+  assert.doesNotMatch(catchSource, /actions\.confirm|setTimeout|console\./);
+  assert.equal(source.match(/actions\.confirm\(\{ redirect: "always" \}\)/gu)?.length, 1);
 });
 
 test("the diagnostic surface contains no customer, session, payment, or secret values", () => {
