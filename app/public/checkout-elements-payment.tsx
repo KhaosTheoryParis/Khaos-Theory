@@ -184,7 +184,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
   const debounceRef = useRef<number | null>(null);
   const [stripeCanConfirm, setStripeCanConfirm] = useState(false);
   const [shippingAmount, setShippingAmount] = useState<number | null>(null);
-  const [amountTotal, setAmountTotal] = useState<number | null>(null);
+  const [displayTotal, setDisplayTotal] = useState<string | null>(null);
   const [statusText, setStatusText] = useState(dictionary.checkout.initializingPayment);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
   const [initializationFailed, setInitializationFailed] = useState(false);
@@ -219,7 +219,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setGateState(initialGate);
     setStripeCanConfirm(false);
     setShippingAmount(null);
-    setAmountTotal(null);
+    setDisplayTotal(null);
     setStatusText(dictionary.checkout.initializingPayment);
     setInitializationFailed(false);
     setConfirmStep("idle");
@@ -284,7 +284,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
           gateRef.current = invalidated;
           setGateState(invalidated);
           setShippingAmount(null);
-          setAmountTotal(null);
+          setDisplayTotal(null);
 
           if (!event.complete) {
             setStatusText("");
@@ -347,12 +347,12 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
 
       if (result.ok) {
         setShippingAmount(result.shippingAmount);
-        setAmountTotal(result.amountTotal);
+        setDisplayTotal(result.session.total.total.amount);
         setStripeCanConfirm(result.session.canConfirm);
         setStatusText(dictionary.checkout.shippingValidated);
       } else {
         setShippingAmount(null);
-        setAmountTotal(null);
+        setDisplayTotal(null);
         setStatusText(result.reason === "ineligible"
           ? dictionary.checkout.ineligibleAddress
           : dictionary.checkout.shippingQuoteError);
@@ -382,7 +382,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setGateState(retryGate);
     setStripeCanConfirm(false);
     setShippingAmount(null);
-    setAmountTotal(null);
+    setDisplayTotal(null);
     setInitializationFailed(false);
     setStatusText(dictionary.checkout.initializingPayment);
     setConfirmStep("idle");
@@ -449,7 +449,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     gateRef.current = { ...eligible, status: "confirming" };
     setGateState(gateRef.current);
     setShippingAmount(shippingResult.shippingAmount);
-    setAmountTotal(shippingResult.amountTotal);
+    setDisplayTotal(shippingResult.session.total.total.amount);
     setStatusText(dictionary.checkout.confirmingPayment);
 
     let confirmPhase: Exclude<CheckoutConfirmErrorType, "none"> = "validation";
@@ -549,8 +549,8 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
           ? dictionary.checkout.freeShipping
           : formatCurrency(shippingAmount, locale)}</strong>
       </div>
-      {amountTotal !== null ? (
-        <div className="checkout-total"><span>{dictionary.checkout.total}</span><strong>{formatCurrency(amountTotal, locale)}</strong></div>
+      {displayTotal !== null ? (
+        <div className="checkout-total"><span>{dictionary.checkout.total}</span><strong>{displayTotal}</strong></div>
       ) : null}
       <button
         className={`stripe-checkout-button${isConfirming ? " stripe-checkout-button--processing" : ""}`}

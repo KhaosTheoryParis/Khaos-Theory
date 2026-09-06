@@ -261,6 +261,15 @@ test("required billing and email completion remain part of Stripe canConfirm aut
   assert.equal(canConfirmCheckoutElements(gate, cartKey, stripeCanConfirmWithValidEmailAndOtherElementsComplete), true);
 });
 
+test("the current Stripe Session total is read and displayed before confirmation", () => {
+  const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
+  assert.match(source, /setDisplayTotal\(result\.session\.total\.total\.amount\)/);
+  assert.match(source, /setDisplayTotal\(shippingResult\.session\.total\.total\.amount\)/);
+  assert.match(source, /<strong>\{displayTotal\}<\/strong>/);
+  assert.doesNotMatch(source, /formatCurrency\(displayTotal/);
+  assert.match(source, /result\.session\.total\.total\.minorUnitsAmount !== amounts\.amountTotal/);
+});
+
 test("the FR and EN Elements UI use the modern typed API and no deprecated callback", () => {
   const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
   assert.match(source, /@stripe\/stripe-js\/pure/);
