@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { buildLocalizedRootRedirect } from "../app/(default)/page";
 
@@ -11,6 +11,7 @@ test("the server root redirects permanently to the French canonical home", () =>
 
 test("the root redirect does not create a client-side homepage or affect localized routes", () => {
   const source = readFileSync("app/(default)/page.tsx", "utf8");
+  assert.equal(existsSync("public/index.html"), false);
   assert.match(source, /permanentRedirect\(/);
   assert.doesNotMatch(source, /useEffect|window\.location|\/index\.html/);
   assert.match(source, /return serializedQuery \? `\/fr\?\$\{serializedQuery\}` : "\/fr"/);
