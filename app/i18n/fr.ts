@@ -28,7 +28,7 @@ export const fr = {
     constructionTitle: "Site en Konstruction",
     constructionMessage: "Les paiements en ligne ne sont pas encore disponibles.",
     constructionContact: "Kontactez-nous pour commander.",
-    tagline: "Bijoux Kontemporary",
+    tagline: "Joaillerie Kontemporaine",
     scrollCue: "Faire défiler pour découvrir",
     collectionTitle: "Kollection",
     products: {
