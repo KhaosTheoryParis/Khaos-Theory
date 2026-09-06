@@ -399,11 +399,13 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
   async function confirmPayment() {
     const actions = actionsRef.current;
     const shippingElement = shippingElementRef.current;
+    const shippingMount = shippingMountRef.current;
     const config = sessionConfigRef.current;
     const generation = generationRef.current;
-    if (!actions || !shippingElement || !config) {
+    if (!actions || !shippingElement || !shippingMount || !config) {
       return;
     }
+    const shippingElementLifecycle = createShippingAddressConfirmationLifecycle(shippingElement, shippingMount);
 
     const started = beginCheckoutConfirmation(gateRef.current, cartKey, stripeCanConfirm);
     if (!started) return;
@@ -477,6 +479,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
 
       confirmPhase = "confirm";
       setConfirmStep("before-confirm");
+      shippingElementLifecycle.unmountBeforeConfirm();
       const confirmation = await actions.confirm({ redirect: "always" });
       setConfirmStep("after-confirm");
       if (generationRef.current !== generation) return;
@@ -491,6 +494,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
         return;
       }
 
+      shippingElementLifecycle.markConfirmationSucceeded();
       setConfirmDiagnostic({ ...EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC, confirmResultType: "success" });
       window.location.assign(`/${locale}/success?session_id=${encodeURIComponent(config.checkoutSessionId)}`);
     } catch (error) {
@@ -503,6 +507,14 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       setGateState(failed);
       setStatusText(dictionary.checkout.paymentError);
     } finally {
+      if (generationRef.current === generation) {
+        try {
+          shippingElementLifecycle.restoreAfterFailure();
+        } catch {
+          setInitializationFailed(true);
+          setStatusText(dictionary.checkout.checkoutInitializationError);
+        }
+      }
       setConfirmStep("finally");
     }
   }
@@ -582,6 +594,33 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       <CheckoutElementsDebugPanel enabled={debugEnabled} state={debugState} />
     </section>
   );
+}
+
+export function createShippingAddressConfirmationLifecycle(
+  element: Pick<StripeAddressElement, "mount" | "unmount">,
+  mountTarget: HTMLElement,
+) {
+  let mounted = true;
+  let confirmationSucceeded = false;
+
+  return {
+    unmountBeforeConfirm() {
+      if (!mounted) return;
+      element.unmount();
+      mounted = false;
+    },
+    markConfirmationSucceeded() {
+      confirmationSucceeded = true;
+    },
+    restoreAfterFailure() {
+      if (mounted || confirmationSucceeded) return;
+      element.mount(mountTarget);
+      mounted = true;
+    },
+    isMounted() {
+      return mounted;
+    },
+  };
 }
 
 export async function runAuthoritativeShippingUpdate(

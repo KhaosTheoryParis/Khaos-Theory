@@ -13,6 +13,7 @@ import {
   invalidateCheckoutCart,
 } from "../app/public/checkout-elements-gate";
 import CheckoutElementsPayment, {
+  createShippingAddressConfirmationLifecycle,
   parseElementsSessionConfig,
   runAuthoritativeShippingUpdate,
 } from "../app/public/checkout-elements-payment";
@@ -247,6 +248,63 @@ test("starting confirmation closes the gate synchronously against a second click
   assert.equal(started?.status, "confirming");
   assert.equal(beginCheckoutConfirmation(started!, cartKey, true), null);
   assert.equal(canConfirmCheckoutElements(started!, cartKey, true), false);
+});
+
+test("the Shipping Address Element is unmounted only for confirm and restored for a human retry", () => {
+  const calls: string[] = [];
+  const element = {
+    unmount: () => calls.push("unmount"),
+    mount: () => calls.push("mount"),
+  };
+  const lifecycle = createShippingAddressConfirmationLifecycle(element, {} as HTMLElement);
+
+  assert.equal(lifecycle.isMounted(), true);
+  assert.deepEqual(calls, []);
+
+  lifecycle.unmountBeforeConfirm();
+  assert.equal(lifecycle.isMounted(), false);
+  assert.deepEqual(calls, ["unmount"]);
+
+  lifecycle.restoreAfterFailure();
+  assert.equal(lifecycle.isMounted(), true);
+  assert.deepEqual(calls, ["unmount", "mount"]);
+
+  lifecycle.unmountBeforeConfirm();
+  lifecycle.restoreAfterFailure();
+  assert.equal(lifecycle.isMounted(), true);
+  assert.deepEqual(calls, ["unmount", "mount", "unmount", "mount"]);
+});
+
+test("a successful confirmation leaves the Shipping Address Element detached for redirect", () => {
+  const calls: string[] = [];
+  const lifecycle = createShippingAddressConfirmationLifecycle({
+    unmount: () => calls.push("unmount"),
+    mount: () => calls.push("mount"),
+  }, {} as HTMLElement);
+
+  lifecycle.unmountBeforeConfirm();
+  lifecycle.markConfirmationSucceeded();
+  lifecycle.restoreAfterFailure();
+
+  assert.equal(lifecycle.isMounted(), false);
+  assert.deepEqual(calls, ["unmount"]);
+});
+
+test("shipping validation finishes before unmount and confirm runs only while the Element is detached", () => {
+  const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
+  const validate = source.indexOf("await actions.validateElements()");
+  const unmount = source.indexOf("shippingElementLifecycle.unmountBeforeConfirm()", validate);
+  const confirm = source.indexOf('await actions.confirm({ redirect: "always" })', unmount);
+  const markSucceeded = source.indexOf("shippingElementLifecycle.markConfirmationSucceeded()", confirm);
+  const finallyBlock = source.indexOf("} finally {", markSucceeded);
+  const restore = source.indexOf("shippingElementLifecycle.restoreAfterFailure()", finallyBlock);
+
+  assert.ok(validate >= 0);
+  assert.ok(unmount > validate);
+  assert.ok(confirm > unmount);
+  assert.ok(markSucceeded > confirm);
+  assert.ok(finallyBlock > markSucceeded);
+  assert.ok(restore > finallyBlock);
 });
 
 test("required billing and email completion remain part of Stripe canConfirm authority", () => {
