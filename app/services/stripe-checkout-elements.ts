@@ -85,9 +85,6 @@ export function checkoutElementsSessionParams(
     ui_mode: "elements",
     locale,
     billing_address_collection: "required",
-    name_collection: {
-      individual: { enabled: true, optional: false },
-    },
     permissions: {
       update_shipping_details: "server_only",
     },

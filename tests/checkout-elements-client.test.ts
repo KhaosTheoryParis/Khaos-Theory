@@ -265,8 +265,8 @@ test("the FR and EN Elements UI use the modern typed API and no deprecated callb
   const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
   assert.match(source, /@stripe\/stripe-js\/pure/);
   assert.match(source, /initCheckoutElementsSdk/);
-  assert.match(source, /createShippingAddressElement/);
-  assert.match(source, /createBillingAddressElement/);
+  assert.match(source, /createShippingAddressElement\(\{ display: \{ name: "full" \} \}\)/);
+  assert.match(source, /createBillingAddressElement\(\{ display: \{ name: "full" \} \}\)/);
   assert.match(source, /billingElement\.mount\(billingMountRef\.current\)/);
   assert.match(source, /billingElement\?\.destroy\(\)/);
   assert.match(source, /createContactDetailsElement/);

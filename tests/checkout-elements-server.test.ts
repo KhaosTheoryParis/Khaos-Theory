@@ -74,6 +74,8 @@ test("Checkout Elements creation uses only the server catalog and the typed serv
   const params = captured[0];
   assert.equal(params.ui_mode, "elements");
   assert.equal(params.mode, "payment");
+  assert.equal(params.name_collection, undefined);
+  assert.equal(params.billing_address_collection, "required");
   assert.deepEqual(params.permissions, { update_shipping_details: "server_only" });
   assert.deepEqual(params.shipping_address_collection, { allowed_countries: ["FR"] });
   assert.equal(params.return_url, "https://khaostheoryparis.com/fr/success?session_id={CHECKOUT_SESSION_ID}");
