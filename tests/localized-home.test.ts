@@ -122,6 +122,12 @@ test("localized French and English homepages retain the animated scroll cue", ()
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
+test("reduced motion leaves the scroll cue still and in its neutral position", () => {
+  const css = readFileSync("app/[locale]/localized-home.css", "utf8");
+
+  assert.match(css, /\.localized-public \.scroll::after\s*\{\s*animation: none !important;\s*opacity: 0\.35;\s*transform: translateY\(0\) rotate\(45deg\);/);
+});
+
 test("the language selector closes outside the menu and keeps a borderless focusable control", () => {
   const source = readFileSync("app/public/public-header.tsx", "utf8");
   const css = readFileSync("app/[locale]/localized-home.css", "utf8");

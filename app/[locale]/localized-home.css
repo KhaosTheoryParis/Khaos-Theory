@@ -429,6 +429,12 @@
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+
+  .localized-public .scroll::after {
+    animation: none !important;
+    opacity: 0.35;
+    transform: translateY(0) rotate(45deg);
+  }
 }
 
 @media (max-width: 700px) {
