@@ -15,7 +15,7 @@ import {
   MAX_CART_QUANTITY,
   removeCheckoutItem,
 } from "../app/public/checkout-cart";
-import { HISTORICAL_CART_STORAGE_KEY, type HistoricalCartItem } from "../app/public/historical-cart";
+import { HISTORICAL_CART_STORAGE_KEY, totalHistoricalCartQuantity, type HistoricalCartItem } from "../app/public/historical-cart";
 
 async function renderCheckout(locale: "fr" | "en") {
   return renderToStaticMarkup(await LocalizedCheckoutPage({ params: Promise.resolve({ locale }) }));
@@ -70,6 +70,14 @@ test("checkout quantity changes preserve the historical cart identity and the on
   const removedByDecrement = changeCheckoutQuantity([{ ...cart[0], quantity: 1 }], "geometry-48", -1);
   assert.deepEqual(removedByDecrement, []);
   assert.deepEqual(removeCheckoutItem(cart, "geometry-48"), [cart[1]]);
+});
+
+test("the cart badge quantity uses the total item quantity across references", () => {
+  assert.equal(totalHistoricalCartQuantity([]), 0);
+  assert.equal(totalHistoricalCartQuantity([{ ...cart[0], quantity: 1 }]), 1);
+  assert.equal(totalHistoricalCartQuantity([{ ...cart[0], quantity: 2 }]), 2);
+  assert.equal(totalHistoricalCartQuantity(cart), 3);
+  assert.equal(totalHistoricalCartQuantity([{ ...cart[0], quantity: 0 }]), 0);
 });
 
 test("the localized checkout adds only its validated locale to the existing item contract", () => {

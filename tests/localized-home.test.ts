@@ -74,6 +74,20 @@ test("the shared header uses semantic navigation, a native collection disclosure
   assert.match(html, /href="\/en" lang="en">/);
 });
 
+test("the shared cart icon exposes a total-quantity badge from the persisted cart source", () => {
+  const source = readFileSync("app/public/public-header.tsx", "utf8");
+  const cartSource = readFileSync("app/public/historical-cart.ts", "utf8");
+  const css = readFileSync("app/[locale]/localized-home.css", "utf8");
+
+  assert.match(source, /totalHistoricalCartQuantity\(readHistoricalCart\(window\.localStorage\)\)/);
+  assert.match(source, /subscribeToHistoricalCart\(refreshCartQuantity\)/);
+  assert.match(source, /cartQuantity > 0 \? <span className="cart-quantity-badge"/);
+  assert.match(cartSource, /HISTORICAL_CART_CHANGE_EVENT/);
+  assert.match(cartSource, /totalHistoricalCartQuantity/);
+  assert.match(css, /\.cart-quantity-badge\s*\{/);
+  assert.match(css, /\.cart-label\s*\{/);
+});
+
 test("localized public styles keep the header, product details and kart controls compact on narrow screens", () => {
   const css = readFileSync("app/[locale]/localized-home.css", "utf8");
 

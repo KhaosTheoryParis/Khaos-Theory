@@ -24,6 +24,31 @@
   min-width: 0;
 }
 
+.localized-public .cart-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.localized-public .cart-quantity-badge {
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #050505;
+  background: #f2f2f2;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
 .localized-public .language-menu {
   position: relative;
   flex: none;
@@ -476,7 +501,7 @@
     justify-content: center;
   }
 
-  .localized-public .localized-header-controls .cart-toggle span {
+  .localized-public .localized-header-controls .cart-toggle .cart-label {
     position: absolute;
     width: 1px;
     height: 1px;

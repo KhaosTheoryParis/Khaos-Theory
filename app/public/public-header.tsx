@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Locale } from "../i18n/config";
 import { getDictionary } from "../i18n";
 import { localizedHref, type LocalizedRoute, type LocalizedRouteOptions } from "../i18n/routes";
+import { readHistoricalCart, subscribeToHistoricalCart, totalHistoricalCartQuantity } from "./historical-cart";
 
 type PublicHeaderProps = {
   locale: Locale;
@@ -21,6 +22,13 @@ export default function PublicHeader({ locale, currentRoute = "home", currentRou
   const activeLanguage = HEADER_LANGUAGES.find((language) => language.locale === locale) ?? HEADER_LANGUAGES[0];
   const languageMenuRef = useRef<HTMLDetailsElement>(null);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [cartQuantity, setCartQuantity] = useState(0);
+
+  useEffect(() => {
+    const refreshCartQuantity = () => setCartQuantity(totalHistoricalCartQuantity(readHistoricalCart(window.localStorage)));
+    refreshCartQuantity();
+    return subscribeToHistoricalCart(refreshCartQuantity);
+  }, []);
 
   useEffect(() => {
     if (!languageOpen) return;
@@ -56,11 +64,14 @@ export default function PublicHeader({ locale, currentRoute = "home", currentRou
             </details>
             <a href={localizedHref(locale, "about")}>{dictionary.navigation.about}</a>
             <a href={localizedHref(locale, "contact")}>{dictionary.navigation.contact}</a>
-            <a href={localizedHref(locale, "checkout")} className="cart-toggle" aria-label={dictionary.navigation.cart}>
-              <svg className="cart-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M2.5 3.5h2.6l2 10.1h10.3l2-7.2H6.2M9 19.2a1.1 1.1 0 1 0 0 2.2Zm7.5 0a1.1 1.1 0 1 0 0 2.2Z" />
-              </svg>
-              <span>{dictionary.navigation.cart}</span>
+            <a href={localizedHref(locale, "checkout")} className="cart-toggle" aria-label={cartQuantity > 0 ? `${dictionary.navigation.cart} (${cartQuantity})` : dictionary.navigation.cart}>
+              <span className="cart-icon-wrap">
+                <svg className="cart-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2.5 3.5h2.6l2 10.1h10.3l2-7.2H6.2M9 19.2a1.1 1.1 0 1 0 0 2.2Zm7.5 0a1.1 1.1 0 1 0 0 2.2Z" />
+                </svg>
+                {cartQuantity > 0 ? <span className="cart-quantity-badge" aria-hidden="true">{cartQuantity}</span> : null}
+              </span>
+              <span className="cart-label">{dictionary.navigation.cart}</span>
             </a>
           </nav>
         </div>

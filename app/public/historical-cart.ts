@@ -1,6 +1,7 @@
 import type { HomeProductId } from "../i18n/types";
 
 export const HISTORICAL_CART_STORAGE_KEY = "khaosTheoryCart";
+export const HISTORICAL_CART_CHANGE_EVENT = "khaos-theory-cart-change";
 
 export type HistoricalCartItem = {
   key: string;
@@ -87,6 +88,29 @@ export function readHistoricalCart(storage: Storage): HistoricalCartItem[] {
   }
 }
 
+export function totalHistoricalCartQuantity(cart: HistoricalCartItem[]): number {
+  return cart.reduce((total, item) => (
+    total + (Number.isInteger(item.quantity) && item.quantity > 0 ? item.quantity : 0)
+  ), 0);
+}
+
+export function subscribeToHistoricalCart(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === HISTORICAL_CART_STORAGE_KEY) listener();
+  };
+  window.addEventListener(HISTORICAL_CART_CHANGE_EVENT, listener);
+  window.addEventListener("storage", handleStorage);
+  return () => {
+    window.removeEventListener(HISTORICAL_CART_CHANGE_EVENT, listener);
+    window.removeEventListener("storage", handleStorage);
+  };
+}
+
 export function writeHistoricalCart(storage: Storage, cart: HistoricalCartItem[]): void {
   storage.setItem(HISTORICAL_CART_STORAGE_KEY, JSON.stringify(cart));
+  if (typeof window !== "undefined" && storage === window.localStorage) {
+    window.dispatchEvent(new Event(HISTORICAL_CART_CHANGE_EVENT));
+  }
 }
