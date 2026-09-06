@@ -364,3 +364,38 @@ test("the FR and EN Elements UI use the modern typed API and no deprecated callb
   assert.equal(fr.checkout.confirmAndPay, "KONFIRM & PAY");
   assert.equal(en.checkout.confirmAndPay, "KONFIRM & PAY");
 });
+
+test("the production checkout contains no temporary diagnostic surface", () => {
+  const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
+
+  for (const diagnosticToken of [
+    "ktdebug",
+    "CheckoutElementsDebugPanel",
+    "confirmStep",
+    "confirmErrorType",
+    "confirmResultType",
+    "confirmStripeErrorType",
+    "confirmStripeErrorCode",
+    "confirmStripeDeclineCode",
+    "confirmStripeErrorMessage",
+  ]) {
+    assert.doesNotMatch(source, new RegExp(diagnosticToken));
+  }
+});
+
+test("a rejected Stripe confirmation keeps the manual recovery path without automatic retry", () => {
+  const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
+  const confirm = source.indexOf('await actions.confirm({ redirect: "always" })');
+  const catchStart = source.indexOf("} catch {", confirm);
+  const finallyStart = source.indexOf("} finally {", catchStart);
+  const catchSource = source.slice(catchStart, finallyStart);
+  const finallySource = source.slice(finallyStart, source.indexOf("\n    }\n  }", finallyStart));
+
+  assert.ok(confirm >= 0 && catchStart > confirm && finallyStart > catchStart);
+  assert.match(catchSource, /status: "error" as const/);
+  assert.match(catchSource, /validatedAddressRevision: null/);
+  assert.match(catchSource, /dictionary\.checkout\.paymentError/);
+  assert.doesNotMatch(catchSource, /actions\.confirm|setTimeout|console\./);
+  assert.match(finallySource, /shippingElementLifecycle\.restoreAfterFailure\(\)/);
+  assert.equal(source.match(/actions\.confirm\(\{ redirect: "always" \}\)/gu)?.length, 1);
+});

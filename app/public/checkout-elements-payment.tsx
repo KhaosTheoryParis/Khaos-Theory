@@ -39,144 +39,6 @@ type ShippingUpdateResult =
 
 const SHIPPING_UPDATE_DEBOUNCE_MS = 300;
 
-export type CheckoutConfirmStep =
-  | "idle"
-  | "before-validate"
-  | "after-validate"
-  | "before-confirm"
-  | "after-confirm"
-  | "error"
-  | "finally";
-
-export type CheckoutConfirmErrorType = "validation" | "confirm" | "unknown" | "none";
-
-export type CheckoutConfirmResultType = "none" | "success" | "error" | "rejected";
-
-export type CheckoutConfirmDiagnostic = {
-  confirmResultType: CheckoutConfirmResultType;
-  confirmStripeErrorType: string;
-  confirmStripeErrorCode: string;
-  confirmStripeDeclineCode: string;
-  confirmStripeErrorMessage: string;
-};
-
-const EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC: CheckoutConfirmDiagnostic = {
-  confirmResultType: "none",
-  confirmStripeErrorType: "none",
-  confirmStripeErrorCode: "none",
-  confirmStripeDeclineCode: "none",
-  confirmStripeErrorMessage: "none",
-};
-
-export type CheckoutElementsDebugState = {
-  cartKeyCurrent: boolean;
-  gateStatus: CheckoutElementsGate["status"];
-  gateEligible: boolean;
-  revisionCurrent: boolean;
-  stripeCanConfirm: boolean;
-  isConfirming: boolean;
-  confirmEnabled: boolean;
-  confirmStep: CheckoutConfirmStep;
-  confirmErrorType: CheckoutConfirmErrorType;
-  confirmResultType: CheckoutConfirmResultType;
-  confirmStripeErrorType: string;
-  confirmStripeErrorCode: string;
-  confirmStripeDeclineCode: string;
-  confirmStripeErrorMessage: string;
-};
-
-export function isCheckoutElementsDebugEnabled(search: string) {
-  return new URLSearchParams(search).get("ktdebug") === "1";
-}
-
-export function checkoutElementsDebugState(
-  gate: CheckoutElementsGate,
-  cartKey: string,
-  stripeCanConfirm: boolean,
-  confirmStep: CheckoutConfirmStep = "idle",
-  confirmErrorType: CheckoutConfirmErrorType = "none",
-  confirmDiagnostic: CheckoutConfirmDiagnostic = EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC,
-): CheckoutElementsDebugState {
-  return {
-    cartKeyCurrent: gate.cartKey === cartKey,
-    gateStatus: gate.status,
-    gateEligible: gate.status === "eligible",
-    revisionCurrent: gate.validatedAddressRevision === gate.addressRevision,
-    stripeCanConfirm,
-    isConfirming: gate.status === "confirming",
-    confirmEnabled: canConfirmCheckoutElements(gate, cartKey, stripeCanConfirm),
-    confirmStep,
-    confirmErrorType,
-    ...confirmDiagnostic,
-  };
-}
-
-export function checkoutConfirmFailureDiagnostic(
-  error: unknown,
-  confirmResultType: Extract<CheckoutConfirmResultType, "error" | "rejected">,
-): CheckoutConfirmDiagnostic {
-  const errorRecord = isRecord(error) ? error : null;
-  const paymentFailed = isRecord(errorRecord?.paymentFailed) ? errorRecord.paymentFailed : null;
-  return {
-    confirmResultType,
-    confirmStripeErrorType: safeStripeDiagnosticToken(errorRecord?.type ?? errorRecord?.name),
-    confirmStripeErrorCode: errorRecord?.code === null
-      ? "none"
-      : safeStripeDiagnosticToken(errorRecord?.code),
-    confirmStripeDeclineCode: safeStripeDiagnosticToken(
-      errorRecord?.decline_code ?? paymentFailed?.declineCode,
-    ),
-    confirmStripeErrorMessage: safeStripeDiagnosticMessage(errorRecord?.message),
-  };
-}
-
-export function CheckoutElementsDebugPanel({
-  enabled,
-  state,
-}: {
-  enabled: boolean;
-  state: CheckoutElementsDebugState;
-}) {
-  if (!enabled) return null;
-  const lines = [
-    `cartKeyCurrent: ${state.cartKeyCurrent}`,
-    `gateStatus: ${state.gateStatus}`,
-    `gateEligible: ${state.gateEligible}`,
-    `revisionCurrent: ${state.revisionCurrent}`,
-    `stripeCanConfirm: ${state.stripeCanConfirm}`,
-    `isConfirming: ${state.isConfirming}`,
-    `confirmEnabled: ${state.confirmEnabled}`,
-    `confirmStep: ${state.confirmStep}`,
-    `confirmErrorType: ${state.confirmErrorType}`,
-    `confirmResultType: ${state.confirmResultType}`,
-    `confirmStripeErrorType: ${state.confirmStripeErrorType}`,
-    `confirmStripeErrorCode: ${state.confirmStripeErrorCode}`,
-    `confirmStripeDeclineCode: ${state.confirmStripeDeclineCode}`,
-    `confirmStripeErrorMessage: ${state.confirmStripeErrorMessage}`,
-  ];
-
-  return (
-    <aside
-      aria-label="Checkout confirmation debug state"
-      data-ktdebug="checkout-confirmation"
-      style={{
-        marginTop: "16px",
-        padding: "12px",
-        border: "1px solid #777",
-        background: "#111",
-        color: "#eee",
-        fontFamily: "monospace",
-        fontSize: "12px",
-        lineHeight: 1.6,
-        overflowWrap: "anywhere",
-      }}
-    >
-      <strong>Checkout confirmation debug</strong>
-      <pre style={{ margin: "8px 0 0", whiteSpace: "pre-wrap" }}>{lines.join("\n")}</pre>
-    </aside>
-  );
-}
-
 export default function CheckoutElementsPayment({ cart, locale, dictionary }: CheckoutElementsPaymentProps) {
   const cartItems = useMemo(() => checkoutSessionItems(cart), [cart]);
   const cartKey = useMemo(() => JSON.stringify(cartItems), [cartItems]);
@@ -193,12 +55,6 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
   const [statusText, setStatusText] = useState(dictionary.checkout.initializingPayment);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
   const [initializationFailed, setInitializationFailed] = useState(false);
-  const [debugEnabled, setDebugEnabled] = useState(false);
-  const [confirmStep, setConfirmStep] = useState<CheckoutConfirmStep>("idle");
-  const [confirmErrorType, setConfirmErrorType] = useState<CheckoutConfirmErrorType>("none");
-  const [confirmDiagnostic, setConfirmDiagnostic] = useState<CheckoutConfirmDiagnostic>(
-    EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC,
-  );
   const shippingMountRef = useRef<HTMLDivElement>(null);
   const billingMountRef = useRef<HTMLDivElement>(null);
   const contactMountRef = useRef<HTMLDivElement>(null);
@@ -213,10 +69,6 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
   }
 
   useEffect(() => {
-    setDebugEnabled(isCheckoutElementsDebugEnabled(window.location.search));
-  }, []);
-
-  useEffect(() => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     const initialGate = createCheckoutElementsGate(cartKey);
@@ -227,10 +79,6 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setDisplayTotal(null);
     setStatusText(dictionary.checkout.initializingPayment);
     setInitializationFailed(false);
-    setConfirmStep("idle");
-    setConfirmErrorType("none");
-    setConfirmDiagnostic(EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC);
-
     let active = true;
     let checkoutSdk: StripeCheckoutElementsSdk | null = null;
     let shippingElement: StripeAddressElement | null = null;
@@ -390,9 +238,6 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setDisplayTotal(null);
     setInitializationFailed(false);
     setStatusText(dictionary.checkout.initializingPayment);
-    setConfirmStep("idle");
-    setConfirmErrorType("none");
-    setConfirmDiagnostic(EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC);
     setInitializationAttempt((attempt) => attempt + 1);
   }
 
@@ -459,17 +304,10 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setDisplayTotal(shippingResult.session.total.total.amount);
     setStatusText(dictionary.checkout.confirmingPayment);
 
-    let confirmPhase: Exclude<CheckoutConfirmErrorType, "none"> = "validation";
-    setConfirmErrorType("none");
-    setConfirmDiagnostic(EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC);
-    setConfirmStep("before-validate");
     try {
       const validation = await actions.validateElements();
-      setConfirmStep("after-validate");
       if (generationRef.current !== generation || gateRef.current.addressRevision !== checkingGate.addressRevision) return;
       if (validation.type !== "success" || !validation.session.canConfirm) {
-        setConfirmErrorType("validation");
-        setConfirmStep("error");
         const failed = { ...gateRef.current, status: "error" as const, validatedAddressRevision: null };
         gateRef.current = failed;
         setGateState(failed);
@@ -477,16 +315,10 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
         return;
       }
 
-      confirmPhase = "confirm";
-      setConfirmStep("before-confirm");
       shippingElementLifecycle.unmountBeforeConfirm();
       const confirmation = await actions.confirm({ redirect: "always" });
-      setConfirmStep("after-confirm");
       if (generationRef.current !== generation) return;
       if (confirmation.type === "error") {
-        setConfirmDiagnostic(checkoutConfirmFailureDiagnostic(confirmation.error, "error"));
-        setConfirmErrorType("confirm");
-        setConfirmStep("error");
         const failed = { ...gateRef.current, status: "error" as const, validatedAddressRevision: null };
         gateRef.current = failed;
         setGateState(failed);
@@ -495,12 +327,8 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       }
 
       shippingElementLifecycle.markConfirmationSucceeded();
-      setConfirmDiagnostic({ ...EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC, confirmResultType: "success" });
       window.location.assign(`/${locale}/success?session_id=${encodeURIComponent(config.checkoutSessionId)}`);
-    } catch (error) {
-      setConfirmDiagnostic(checkoutConfirmFailureDiagnostic(error, "rejected"));
-      setConfirmErrorType(confirmPhase);
-      setConfirmStep("error");
+    } catch {
       if (generationRef.current !== generation) return;
       const failed = { ...gateRef.current, status: "error" as const, validatedAddressRevision: null };
       gateRef.current = failed;
@@ -515,19 +343,10 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
           setStatusText(dictionary.checkout.checkoutInitializationError);
         }
       }
-      setConfirmStep("finally");
     }
   }
 
-  const debugState = checkoutElementsDebugState(
-    gate,
-    cartKey,
-    stripeCanConfirm,
-    confirmStep,
-    confirmErrorType,
-    confirmDiagnostic,
-  );
-  const confirmEnabled = debugState.confirmEnabled;
+  const confirmEnabled = canConfirmCheckoutElements(gate, cartKey, stripeCanConfirm);
   const isShippingUpdating = gate.status === "initializing" || gate.status === "checking";
   const isConfirming = gate.status === "confirming";
   const isProcessing = isShippingUpdating || isConfirming;
@@ -591,7 +410,6 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       >
         {statusText}
       </p>
-      <CheckoutElementsDebugPanel enabled={debugEnabled} state={debugState} />
     </section>
   );
 }
@@ -723,23 +541,4 @@ function isNonNegativeSafeInteger(value: unknown): value is number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function safeStripeDiagnosticToken(value: unknown) {
-  if (value === null || value === undefined) return "none";
-  if (typeof value !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/u.test(value)) return "unknown";
-  return value;
-}
-
-export function safeStripeDiagnosticMessage(value: unknown) {
-  if (typeof value !== "string") return "none";
-  const message = value.replace(/[\r\n\t]+/gu, " ").trim().slice(0, 600);
-  if (!message) return "none";
-  return message
-    .replace(/\b(?:sk|pk|rk)_(?:test|live)_[^\s"'<>]+/gu, "[REDACTED]")
-    .replace(/\bcs_(?:test|live)_[^\s"'<>]+/gu, "[REDACTED]")
-    .replace(/\b(?:pi|seti|ch|pm|src|tok)_[A-Za-z0-9_-]+\b/gu, "[REDACTED]")
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, "[REDACTED]")
-    .replace(/https?:\/\/[^\s"'<>]+/giu, "[REDACTED]")
-    .replace(/\b(?:\d[ -]?){12,19}\b/gu, "[REDACTED]");
 }
