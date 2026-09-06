@@ -39,6 +39,17 @@ type ShippingUpdateResult =
 
 const SHIPPING_UPDATE_DEBOUNCE_MS = 300;
 
+export type CheckoutConfirmStep =
+  | "idle"
+  | "before-validate"
+  | "after-validate"
+  | "before-confirm"
+  | "after-confirm"
+  | "error"
+  | "finally";
+
+export type CheckoutConfirmErrorType = "validation" | "confirm" | "unknown" | "none";
+
 export type CheckoutElementsDebugState = {
   cartKeyCurrent: boolean;
   gateStatus: CheckoutElementsGate["status"];
@@ -47,6 +58,8 @@ export type CheckoutElementsDebugState = {
   stripeCanConfirm: boolean;
   isConfirming: boolean;
   confirmEnabled: boolean;
+  confirmStep: CheckoutConfirmStep;
+  confirmErrorType: CheckoutConfirmErrorType;
 };
 
 export function isCheckoutElementsDebugEnabled(search: string) {
@@ -57,6 +70,8 @@ export function checkoutElementsDebugState(
   gate: CheckoutElementsGate,
   cartKey: string,
   stripeCanConfirm: boolean,
+  confirmStep: CheckoutConfirmStep = "idle",
+  confirmErrorType: CheckoutConfirmErrorType = "none",
 ): CheckoutElementsDebugState {
   return {
     cartKeyCurrent: gate.cartKey === cartKey,
@@ -66,6 +81,8 @@ export function checkoutElementsDebugState(
     stripeCanConfirm,
     isConfirming: gate.status === "confirming",
     confirmEnabled: canConfirmCheckoutElements(gate, cartKey, stripeCanConfirm),
+    confirmStep,
+    confirmErrorType,
   };
 }
 
@@ -85,6 +102,8 @@ export function CheckoutElementsDebugPanel({
     `stripeCanConfirm: ${state.stripeCanConfirm}`,
     `isConfirming: ${state.isConfirming}`,
     `confirmEnabled: ${state.confirmEnabled}`,
+    `confirmStep: ${state.confirmStep}`,
+    `confirmErrorType: ${state.confirmErrorType}`,
   ];
 
   return (
@@ -126,6 +145,8 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
   const [initializationAttempt, setInitializationAttempt] = useState(0);
   const [initializationFailed, setInitializationFailed] = useState(false);
   const [debugEnabled, setDebugEnabled] = useState(false);
+  const [confirmStep, setConfirmStep] = useState<CheckoutConfirmStep>("idle");
+  const [confirmErrorType, setConfirmErrorType] = useState<CheckoutConfirmErrorType>("none");
   const shippingMountRef = useRef<HTMLDivElement>(null);
   const billingMountRef = useRef<HTMLDivElement>(null);
   const contactMountRef = useRef<HTMLDivElement>(null);
@@ -154,6 +175,8 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setAmountTotal(null);
     setStatusText(dictionary.checkout.initializingPayment);
     setInitializationFailed(false);
+    setConfirmStep("idle");
+    setConfirmErrorType("none");
 
     let active = true;
     let checkoutSdk: StripeCheckoutElementsSdk | null = null;
@@ -314,6 +337,8 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setAmountTotal(null);
     setInitializationFailed(false);
     setStatusText(dictionary.checkout.initializingPayment);
+    setConfirmStep("idle");
+    setConfirmErrorType("none");
     setInitializationAttempt((attempt) => attempt + 1);
   }
 
@@ -378,30 +403,48 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setAmountTotal(shippingResult.amountTotal);
     setStatusText(dictionary.checkout.confirmingPayment);
 
-    const validation = await actions.validateElements();
-    if (generationRef.current !== generation || gateRef.current.addressRevision !== checkingGate.addressRevision) return;
-    if (validation.type !== "success" || !validation.session.canConfirm) {
-      const failed = { ...gateRef.current, status: "error" as const, validatedAddressRevision: null };
-      gateRef.current = failed;
-      setGateState(failed);
-      setStatusText(dictionary.checkout.paymentError);
-      return;
-    }
+    let confirmPhase: Exclude<CheckoutConfirmErrorType, "none"> = "validation";
+    setConfirmErrorType("none");
+    setConfirmStep("before-validate");
+    try {
+      const validation = await actions.validateElements();
+      setConfirmStep("after-validate");
+      if (generationRef.current !== generation || gateRef.current.addressRevision !== checkingGate.addressRevision) return;
+      if (validation.type !== "success" || !validation.session.canConfirm) {
+        setConfirmErrorType("validation");
+        setConfirmStep("error");
+        const failed = { ...gateRef.current, status: "error" as const, validatedAddressRevision: null };
+        gateRef.current = failed;
+        setGateState(failed);
+        setStatusText(dictionary.checkout.paymentError);
+        return;
+      }
 
-    const confirmation = await actions.confirm({ redirect: "always" });
-    if (generationRef.current !== generation) return;
-    if (confirmation.type === "error") {
-      const failed = { ...gateRef.current, status: "error" as const, validatedAddressRevision: null };
-      gateRef.current = failed;
-      setGateState(failed);
-      setStatusText(dictionary.checkout.paymentError);
-      return;
-    }
+      confirmPhase = "confirm";
+      setConfirmStep("before-confirm");
+      const confirmation = await actions.confirm({ redirect: "always" });
+      setConfirmStep("after-confirm");
+      if (generationRef.current !== generation) return;
+      if (confirmation.type === "error") {
+        setConfirmErrorType("confirm");
+        setConfirmStep("error");
+        const failed = { ...gateRef.current, status: "error" as const, validatedAddressRevision: null };
+        gateRef.current = failed;
+        setGateState(failed);
+        setStatusText(dictionary.checkout.paymentError);
+        return;
+      }
 
-    window.location.assign(`/${locale}/success?session_id=${encodeURIComponent(config.checkoutSessionId)}`);
+      window.location.assign(`/${locale}/success?session_id=${encodeURIComponent(config.checkoutSessionId)}`);
+    } catch {
+      setConfirmErrorType(confirmPhase);
+      setConfirmStep("error");
+    } finally {
+      setConfirmStep("finally");
+    }
   }
 
-  const debugState = checkoutElementsDebugState(gate, cartKey, stripeCanConfirm);
+  const debugState = checkoutElementsDebugState(gate, cartKey, stripeCanConfirm, confirmStep, confirmErrorType);
   const confirmEnabled = debugState.confirmEnabled;
   const isShippingUpdating = gate.status === "initializing" || gate.status === "checking";
   const isConfirming = gate.status === "confirming";
