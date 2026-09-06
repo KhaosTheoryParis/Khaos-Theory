@@ -105,6 +105,15 @@ test("localized public styles retain visible focus, readable disabled states and
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
+test("checkout spacing stays compact while preserving a full-size payment target", () => {
+  const css = readFileSync("app/[locale]/localized-home.css", "utf8");
+
+  assert.match(css, /\.localized-public \.checkout-elements \{\s*margin-top: 22px;/);
+  assert.match(css, /\.localized-public \.stripe-element-section \{\s*margin: 16px 0 0;\s*padding: 20px;/);
+  assert.match(css, /\.localized-public \.stripe-checkout-button \{\s*margin-top: 18px;/);
+  assert.match(css, /\.localized-public \.stripe-checkout-button:disabled/);
+});
+
 test("the language selector closes outside the menu and keeps a borderless focusable control", () => {
   const source = readFileSync("app/public/public-header.tsx", "utf8");
   const css = readFileSync("app/[locale]/localized-home.css", "utf8");
