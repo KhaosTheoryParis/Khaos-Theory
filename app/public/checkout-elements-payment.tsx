@@ -39,6 +39,76 @@ type ShippingUpdateResult =
 
 const SHIPPING_UPDATE_DEBOUNCE_MS = 300;
 
+export type CheckoutElementsDebugState = {
+  cartKeyCurrent: boolean;
+  gateStatus: CheckoutElementsGate["status"];
+  gateEligible: boolean;
+  revisionCurrent: boolean;
+  stripeCanConfirm: boolean;
+  isConfirming: boolean;
+  confirmEnabled: boolean;
+};
+
+export function isCheckoutElementsDebugEnabled(search: string) {
+  return new URLSearchParams(search).get("ktdebug") === "1";
+}
+
+export function checkoutElementsDebugState(
+  gate: CheckoutElementsGate,
+  cartKey: string,
+  stripeCanConfirm: boolean,
+): CheckoutElementsDebugState {
+  return {
+    cartKeyCurrent: gate.cartKey === cartKey,
+    gateStatus: gate.status,
+    gateEligible: gate.status === "eligible",
+    revisionCurrent: gate.validatedAddressRevision === gate.addressRevision,
+    stripeCanConfirm,
+    isConfirming: gate.status === "confirming",
+    confirmEnabled: canConfirmCheckoutElements(gate, cartKey, stripeCanConfirm),
+  };
+}
+
+export function CheckoutElementsDebugPanel({
+  enabled,
+  state,
+}: {
+  enabled: boolean;
+  state: CheckoutElementsDebugState;
+}) {
+  if (!enabled) return null;
+  const lines = [
+    `cartKeyCurrent: ${state.cartKeyCurrent}`,
+    `gateStatus: ${state.gateStatus}`,
+    `gateEligible: ${state.gateEligible}`,
+    `revisionCurrent: ${state.revisionCurrent}`,
+    `stripeCanConfirm: ${state.stripeCanConfirm}`,
+    `isConfirming: ${state.isConfirming}`,
+    `confirmEnabled: ${state.confirmEnabled}`,
+  ];
+
+  return (
+    <aside
+      aria-label="Checkout confirmation debug state"
+      data-ktdebug="checkout-confirmation"
+      style={{
+        marginTop: "16px",
+        padding: "12px",
+        border: "1px solid #777",
+        background: "#111",
+        color: "#eee",
+        fontFamily: "monospace",
+        fontSize: "12px",
+        lineHeight: 1.6,
+        overflowWrap: "anywhere",
+      }}
+    >
+      <strong>Checkout confirmation debug</strong>
+      <pre style={{ margin: "8px 0 0", whiteSpace: "pre-wrap" }}>{lines.join("\n")}</pre>
+    </aside>
+  );
+}
+
 export default function CheckoutElementsPayment({ cart, locale, dictionary }: CheckoutElementsPaymentProps) {
   const cartItems = useMemo(() => checkoutSessionItems(cart), [cart]);
   const cartKey = useMemo(() => JSON.stringify(cartItems), [cartItems]);
@@ -55,6 +125,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
   const [statusText, setStatusText] = useState(dictionary.checkout.initializingPayment);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
   const [initializationFailed, setInitializationFailed] = useState(false);
+  const [debugEnabled, setDebugEnabled] = useState(false);
   const shippingMountRef = useRef<HTMLDivElement>(null);
   const billingMountRef = useRef<HTMLDivElement>(null);
   const contactMountRef = useRef<HTMLDivElement>(null);
@@ -67,6 +138,10 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       return resolved;
     });
   }
+
+  useEffect(() => {
+    setDebugEnabled(isCheckoutElementsDebugEnabled(window.location.search));
+  }, []);
 
   useEffect(() => {
     const generation = generationRef.current + 1;
@@ -326,7 +401,8 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     window.location.assign(`/${locale}/success?session_id=${encodeURIComponent(config.checkoutSessionId)}`);
   }
 
-  const confirmEnabled = canConfirmCheckoutElements(gate, cartKey, stripeCanConfirm);
+  const debugState = checkoutElementsDebugState(gate, cartKey, stripeCanConfirm);
+  const confirmEnabled = debugState.confirmEnabled;
   const isShippingUpdating = gate.status === "initializing" || gate.status === "checking";
   const isConfirming = gate.status === "confirming";
   const isProcessing = isShippingUpdating || isConfirming;
@@ -390,6 +466,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       >
         {statusText}
       </p>
+      <CheckoutElementsDebugPanel enabled={debugEnabled} state={debugState} />
     </section>
   );
 }
