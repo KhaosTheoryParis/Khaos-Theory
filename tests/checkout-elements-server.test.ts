@@ -295,14 +295,26 @@ function shippingBody(postalCode = "75001", city = "Paris") {
     checkoutSessionId: SESSION_ID,
     clientSecret: CLIENT_SECRET,
     shippingDetails: {
-      name: "Test Customer",
+      firstName: "Test",
+      lastName: "Customer",
       address: { country: "FR", postal_code: postalCode, city, line1: "1 rue de Test" },
     },
   };
 }
 
 test("update body parser accepts an opaque bounded Stripe capability only for the matching session", () => {
-  assert.ok(parseCheckoutShippingUpdateBody(shippingBody()));
+  assert.deepEqual(parseCheckoutShippingUpdateBody({
+    ...shippingBody(),
+    shippingDetails: {
+      ...shippingBody().shippingDetails,
+      firstName: "  Test ",
+      lastName: " Customer  ",
+    },
+  })?.shippingDetails, {
+    firstName: "Test",
+    lastName: "Customer",
+    address: { country: "FR", postal_code: "75001", city: "Paris", line1: "1 rue de Test" },
+  });
 
   const clientSecretPrefix = `${SESSION_ID}_secret_`;
   for (const body of [
@@ -311,6 +323,14 @@ test("update body parser accepts an opaque bounded Stripe capability only for th
     { ...shippingBody(), clientSecret: clientSecretPrefix },
     { ...shippingBody(), clientSecret: `${clientSecretPrefix}too-short` },
     { ...shippingBody(), clientSecret: `${clientSecretPrefix}${"x".repeat(513)}` },
+    { ...shippingBody(), shippingDetails: { ...shippingBody().shippingDetails, firstName: "" } },
+    { ...shippingBody(), shippingDetails: { ...shippingBody().shippingDetails, lastName: "   " } },
+    { ...shippingBody(), shippingDetails: { ...shippingBody().shippingDetails, firstName: "x".repeat(101) } },
+    { ...shippingBody(), shippingDetails: { ...shippingBody().shippingDetails, lastName: "x".repeat(101) } },
+    {
+      ...shippingBody(),
+      shippingDetails: { ...shippingBody().shippingDetails, name: "Legacy Full Name" },
+    },
   ]) {
     assert.equal(parseCheckoutShippingUpdateBody(body), null);
   }
@@ -353,6 +373,7 @@ test("server update validates Paris and adds the exact authoritative 10 euro shi
   assert.equal(dependencies.updates.length, 1);
   const options = dependencies.updates[0]?.shipping_options;
   assert.equal(Array.isArray(options) ? options[0]?.shipping_rate_data?.fixed_amount?.amount : undefined, 1_000);
+  assert.equal(dependencies.updates[0]?.collected_information?.shipping_details?.name, "Test Customer");
   assert.equal(dependencies.updates[0]?.collected_information?.shipping_details?.address.country, "FR");
 });
 

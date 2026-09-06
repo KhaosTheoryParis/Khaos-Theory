@@ -35,7 +35,8 @@ export type UpdateCheckoutSessionPort = {
 };
 
 export type CheckoutShippingDetails = {
-  name: string;
+  firstName: string;
+  lastName: string;
   address: {
     country: string;
     postal_code: string;
@@ -122,16 +123,20 @@ export function parseCheckoutShippingUpdateBody(value: unknown): CheckoutShippin
     clientSecret.length < clientSecretPrefix.length + CHECKOUT_CLIENT_SECRET_MIN_SUFFIX_LENGTH ||
     clientSecret.length > CHECKOUT_CLIENT_SECRET_MAX_LENGTH ||
     !isRecord(shippingDetails) ||
-    !hasExactKeys(shippingDetails, ["address", "name"])
+    !hasExactKeys(shippingDetails, ["address", "firstName", "lastName"])
   ) {
     return null;
   }
 
-  const { name, address } = shippingDetails;
+  const { firstName, lastName, address } = shippingDetails;
+  const normalizedFirstName = typeof firstName === "string" ? firstName.trim() : "";
+  const normalizedLastName = typeof lastName === "string" ? lastName.trim() : "";
   if (
-    typeof name !== "string" ||
-    name.trim().length === 0 ||
-    name.length > 200 ||
+    !normalizedFirstName ||
+    !normalizedLastName ||
+    normalizedFirstName.length > 100 ||
+    normalizedLastName.length > 100 ||
+    `${normalizedFirstName} ${normalizedLastName}`.length > 200 ||
     !isRecord(address) ||
     !hasOnlyKeys(address, ["city", "country", "line1", "line2", "postal_code"], ["city", "country", "line1", "postal_code"]) ||
     typeof address.country !== "string" ||
@@ -149,7 +154,8 @@ export function parseCheckoutShippingUpdateBody(value: unknown): CheckoutShippin
     checkoutSessionId,
     clientSecret,
     shippingDetails: {
-      name: name.trim(),
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
       address: {
         country: address.country,
         postal_code: address.postal_code,
@@ -207,8 +213,9 @@ export async function updateCheckoutShipping({
   const locale = session.metadata?.checkout_locale;
   if (!isLocale(locale)) throw new CheckoutElementsError(400, "INVALID_CHECKOUT_SESSION");
   const quote = quoteShipping(cart.productsSubtotal, locale);
+  const shippingName = `${body.shippingDetails.firstName} ${body.shippingDetails.lastName}`;
   const shippingDetails: CheckoutShippingDetailsParam = {
-    name: body.shippingDetails.name,
+    name: shippingName,
     address: {
       country: "FR",
       postal_code: destination.postalCode,
@@ -229,7 +236,8 @@ export async function updateCheckoutShipping({
   };
   const addressDigest = await sha256Hex(JSON.stringify({
     address: shippingDetails.address,
-    name: shippingDetails.name,
+    firstName: body.shippingDetails.firstName,
+    lastName: body.shippingDetails.lastName,
     shippingAmount: quote.shippingAmount,
     policy: CHECKOUT_ELEMENTS_FLOW,
   }));
@@ -243,7 +251,14 @@ export async function updateCheckoutShipping({
     throw new CheckoutElementsError(502, "CHECKOUT_SHIPPING_UPDATE_FAILED");
   }
 
-  assertUpdatedShippingSession(updated, cart.productsSubtotal, quote.shippingAmount, destination.postalCode, destination.city);
+  assertUpdatedShippingSession(
+    updated,
+    cart.productsSubtotal,
+    quote.shippingAmount,
+    destination.postalCode,
+    destination.city,
+    shippingName,
+  );
   return {
     checkoutSessionId: updated.id,
     productsSubtotal: cart.productsSubtotal,
@@ -287,8 +302,10 @@ function assertUpdatedShippingSession(
   shippingAmount: number,
   postalCode: string,
   normalizedCity: string,
+  shippingName: string,
 ) {
-  const address = session.collected_information?.shipping_details?.address;
+  const returnedShippingDetails = session.collected_information?.shipping_details;
+  const address = returnedShippingDetails?.address;
   const returnedDestination = validateFrShippingDestination({
     country: address?.country,
     postalCode: address?.postal_code,
@@ -303,6 +320,7 @@ function assertUpdatedShippingSession(
     session.total_details.amount_discount !== 0 ||
     session.total_details.amount_tax !== 0 ||
     session.amount_total !== productsSubtotal + shippingAmount ||
+    returnedShippingDetails?.name !== shippingName ||
     !returnedDestination.eligible ||
     returnedDestination.postalCode !== postalCode ||
     returnedDestination.city !== normalizedCity

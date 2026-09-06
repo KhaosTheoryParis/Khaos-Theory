@@ -87,11 +87,15 @@ function session({
   shippingAmount,
   amountTotal = productsSubtotal + (shippingAmount ?? 0),
   schemaVersion = "1",
+  customerName = "Shipping Test",
+  individualName = "Shipping Test",
 }: {
   productsSubtotal?: number;
   shippingAmount?: number;
   amountTotal?: number;
   schemaVersion?: string | null;
+  customerName?: string;
+  individualName?: string | null;
 } = {}) {
   const hasShipping = shippingAmount !== undefined;
   return {
@@ -107,8 +111,8 @@ function session({
     customer_email: "shipping@example.test",
     customer_details: {
       email: "shipping@example.test",
-      individual_name: "Shipping Test",
-      name: "Shipping Test",
+      individual_name: individualName,
+      name: customerName,
       business_name: null,
       phone: null,
       tax_exempt: "none",
@@ -135,9 +139,9 @@ function session({
     },
     collected_information: {
       business_name: null,
-      individual_name: "Shipping Test",
+      individual_name: individualName,
       shipping_details: hasShipping ? {
-        name: "Shipping Test",
+        name: customerName,
         address: { city: "Paris", country: "FR", line1: "1 rue de Test", postal_code: "75001" },
       } : null,
     },
@@ -202,12 +206,13 @@ function cents(amount: string) {
   return Math.round(Number(amount) * 100);
 }
 
-function mockPennylane() {
+function mockPennylane({ existingCustomer = true }: { existingCustomer?: boolean } = {}) {
   let invoiceCreated = false;
   let invoiceCreateCalls = 0;
   let fetchCalls = 0;
   let invoiceLines: InvoiceLinePayload[] = [];
   const invoicePayloads: Array<{ invoice_lines: InvoiceLinePayload[]; external_reference: string }> = [];
+  const customerPayloads: Array<Record<string, unknown>> = [];
 
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
     status,
@@ -236,7 +241,11 @@ function mockPennylane() {
       return json({ items: invoiceCreated ? [invoice()] : [] });
     }
     if (url.pathname === "/api/external/v2/customers" && method === "GET") {
-      return json({ items: [{ id: 42 }] });
+      return json({ items: existingCustomer ? [{ id: 42 }] : [] });
+    }
+    if (url.pathname === "/api/external/v2/individual_customers" && method === "POST") {
+      customerPayloads.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return json({ id: 43 });
     }
     if (url.pathname === "/api/external/v2/customer_invoices" && method === "POST") {
       invoiceCreateCalls += 1;
@@ -275,6 +284,7 @@ function mockPennylane() {
     get invoiceCreateCalls() { return invoiceCreateCalls; },
     get invoiceLines() { return invoiceLines; },
     get invoicePayloads() { return invoicePayloads; },
+    get customerPayloads() { return customerPayloads; },
   };
 }
 
@@ -338,6 +348,26 @@ test("paid shipping adds exactly one exempt bilingual shipping line", async () =
     mock.invoicePayloads[0]?.external_reference,
     "stripe_checkout_cs_test_pennylaneShipping",
   );
+});
+
+test("Pennylane receives separate first and last names at its individual-customer boundary", async () => {
+  const checkoutSession = session({
+    shippingAmount: 1_000,
+    customerName: "Marie Dupont",
+    individualName: null,
+  });
+  const mock = mockPennylane({ existingCustomer: false });
+
+  await withPennylaneMock(mock, () => syncPaidCheckoutSessionToPennylane({
+    stripe: stripeFor(checkoutSession),
+    sessionId: checkoutSession.id,
+    token: "fake-pennylane-token",
+  }));
+
+  assert.equal(mock.customerPayloads.length, 1);
+  assert.equal(mock.customerPayloads[0]?.first_name, "Marie");
+  assert.equal(mock.customerPayloads[0]?.last_name, "Dupont");
+  assert.equal(mock.customerPayloads[0]?.recipient, "Marie Dupont");
 });
 
 test("free shipping creates no zero-value Pennylane line", async () => {

@@ -106,8 +106,8 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
 
         const sdk = stripe.initCheckoutElementsSdk({ clientSecret: config.clientSecret });
         checkoutSdk = sdk;
-        shippingElement = sdk.createShippingAddressElement({ display: { name: "full" } });
-        billingElement = sdk.createBillingAddressElement({ display: { name: "full" } });
+        shippingElement = sdk.createShippingAddressElement({ display: { name: "split" } });
+        billingElement = sdk.createBillingAddressElement({ display: { name: "split" } });
         contactElement = sdk.createContactDetailsElement();
         paymentElement = sdk.createPaymentElement();
         if (!shippingMountRef.current || !billingMountRef.current || !contactMountRef.current || !paymentMountRef.current) {
@@ -515,9 +515,10 @@ function parseShippingUpdateResponse(value: unknown) {
   return { shippingAmount: value.shippingAmount, amountTotal: value.amountTotal };
 }
 
-function stripeShippingDetails(event: Pick<StripeAddressElementChangeEvent, "value">) {
+export function stripeShippingDetails(event: Pick<StripeAddressElementChangeEvent, "value">) {
   return {
-    name: event.value.name,
+    firstName: event.value.firstName ?? "",
+    lastName: event.value.lastName ?? "",
     address: {
       country: event.value.address.country,
       postal_code: event.value.address.postal_code,

@@ -16,6 +16,7 @@ import CheckoutElementsPayment, {
   createShippingAddressConfirmationLifecycle,
   parseElementsSessionConfig,
   runAuthoritativeShippingUpdate,
+  stripeShippingDetails,
 } from "../app/public/checkout-elements-payment";
 import { checkoutSessionItems } from "../app/public/checkout-cart";
 import { readHistoricalCart, type HistoricalCartItem } from "../app/public/historical-cart";
@@ -40,7 +41,8 @@ function checkoutSession(shippingAmount = 1_000, amountTotal = 26_000): StripeCh
 }
 
 const shippingDetails = {
-  name: "Test Customer",
+  firstName: "Test",
+  lastName: "Customer",
   address: {
     country: "FR",
     postal_code: "75001",
@@ -122,6 +124,7 @@ test("runServerUpdate sends only session proof and address, never browser financ
   const result = await runAuthoritativeShippingUpdate(actions, config, shippingDetails, fetcher);
   assert.equal(result.ok, true);
   assert.deepEqual(Object.keys(requestBody as object).sort(), ["checkoutSessionId", "clientSecret", "shippingDetails"]);
+  assert.deepEqual((requestBody as { shippingDetails: unknown }).shippingDetails, shippingDetails);
   assert.doesNotMatch(JSON.stringify(requestBody), /productsSubtotal|shippingAmount|\btotal\b|shippingZone|\bprice\b/);
 
   let gate = invalidateCheckoutAddress(createCheckoutElementsGate("cart"), true);
@@ -129,6 +132,36 @@ test("runServerUpdate sends only session proof and address, never browser financ
   gate = finishCheckoutAddressValidation(gate, gate.addressRevision, "eligible");
   assert.equal(gate.status, "eligible");
   assert.equal(canConfirmCheckoutElements(gate, "cart", true), true);
+});
+
+test("split Stripe address names stay separate in the application shipping payload", () => {
+  const details = stripeShippingDetails({
+    value: {
+      name: "Marie Dupont",
+      firstName: "Marie",
+      lastName: "Dupont",
+      address: {
+        country: "FR",
+        postal_code: "75001",
+        city: "Paris",
+        line1: "1 rue de Test",
+        line2: null,
+        state: "",
+      },
+    },
+  });
+
+  assert.deepEqual(details, {
+    firstName: "Marie",
+    lastName: "Dupont",
+    address: {
+      country: "FR",
+      postal_code: "75001",
+      city: "Paris",
+      line1: "1 rue de Test",
+    },
+  });
+  assert.equal("name" in details, false);
 });
 
 test("server rejection is propagated as an ineligible shipping gate", async () => {
@@ -332,8 +365,8 @@ test("the FR and EN Elements UI use the modern typed API and no deprecated callb
   const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
   assert.match(source, /@stripe\/stripe-js\/pure/);
   assert.match(source, /initCheckoutElementsSdk/);
-  assert.match(source, /createShippingAddressElement\(\{ display: \{ name: "full" \} \}\)/);
-  assert.match(source, /createBillingAddressElement\(\{ display: \{ name: "full" \} \}\)/);
+  assert.match(source, /createShippingAddressElement\(\{ display: \{ name: "split" \} \}\)/);
+  assert.match(source, /createBillingAddressElement\(\{ display: \{ name: "split" \} \}\)/);
   assert.match(source, /billingElement\.mount\(billingMountRef\.current\)/);
   assert.match(source, /billingElement\?\.destroy\(\)/);
   assert.match(source, /createContactDetailsElement/);
