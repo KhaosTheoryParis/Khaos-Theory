@@ -57,6 +57,7 @@ export type CheckoutConfirmDiagnostic = {
   confirmStripeErrorType: string;
   confirmStripeErrorCode: string;
   confirmStripeDeclineCode: string;
+  confirmStripeErrorMessage: string;
 };
 
 const EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC: CheckoutConfirmDiagnostic = {
@@ -64,6 +65,7 @@ const EMPTY_CHECKOUT_CONFIRM_DIAGNOSTIC: CheckoutConfirmDiagnostic = {
   confirmStripeErrorType: "none",
   confirmStripeErrorCode: "none",
   confirmStripeDeclineCode: "none",
+  confirmStripeErrorMessage: "none",
 };
 
 export type CheckoutElementsDebugState = {
@@ -80,6 +82,7 @@ export type CheckoutElementsDebugState = {
   confirmStripeErrorType: string;
   confirmStripeErrorCode: string;
   confirmStripeDeclineCode: string;
+  confirmStripeErrorMessage: string;
 };
 
 export function isCheckoutElementsDebugEnabled(search: string) {
@@ -123,6 +126,7 @@ export function checkoutConfirmFailureDiagnostic(
     confirmStripeDeclineCode: safeStripeDiagnosticToken(
       errorRecord?.decline_code ?? paymentFailed?.declineCode,
     ),
+    confirmStripeErrorMessage: safeStripeDiagnosticMessage(errorRecord?.message),
   };
 }
 
@@ -148,6 +152,7 @@ export function CheckoutElementsDebugPanel({
     `confirmStripeErrorType: ${state.confirmStripeErrorType}`,
     `confirmStripeErrorCode: ${state.confirmStripeErrorCode}`,
     `confirmStripeDeclineCode: ${state.confirmStripeDeclineCode}`,
+    `confirmStripeErrorMessage: ${state.confirmStripeErrorMessage}`,
   ];
 
   return (
@@ -685,4 +690,17 @@ function safeStripeDiagnosticToken(value: unknown) {
   if (value === null || value === undefined) return "none";
   if (typeof value !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/u.test(value)) return "unknown";
   return value;
+}
+
+export function safeStripeDiagnosticMessage(value: unknown) {
+  if (typeof value !== "string") return "none";
+  const message = value.replace(/[\r\n\t]+/gu, " ").trim().slice(0, 600);
+  if (!message) return "none";
+  return message
+    .replace(/\b(?:sk|pk|rk)_(?:test|live)_[^\s"'<>]+/gu, "[REDACTED]")
+    .replace(/\bcs_(?:test|live)_[^\s"'<>]+/gu, "[REDACTED]")
+    .replace(/\b(?:pi|seti|ch|pm|src|tok)_[A-Za-z0-9_-]+\b/gu, "[REDACTED]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, "[REDACTED]")
+    .replace(/https?:\/\/[^\s"'<>]+/giu, "[REDACTED]")
+    .replace(/\b(?:\d[ -]?){12,19}\b/gu, "[REDACTED]");
 }

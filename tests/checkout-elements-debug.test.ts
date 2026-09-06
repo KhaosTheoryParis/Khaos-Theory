@@ -8,6 +8,7 @@ import {
   checkoutConfirmFailureDiagnostic,
   checkoutElementsDebugState,
   isCheckoutElementsDebugEnabled,
+  safeStripeDiagnosticMessage,
 } from "../app/public/checkout-elements-payment";
 import {
   beginCheckoutConfirmation,
@@ -43,6 +44,7 @@ test("the debug panel exposes only the booleans and gate status from the real co
     confirmStripeErrorType: "none",
     confirmStripeErrorCode: "none",
     confirmStripeDeclineCode: "none",
+    confirmStripeErrorMessage: "none",
   });
 
   const visible = renderToStaticMarkup(createElement(CheckoutElementsDebugPanel, { enabled: true, state }));
@@ -62,6 +64,7 @@ test("the debug panel exposes only the booleans and gate status from the real co
     "confirmStripeErrorType: none",
     "confirmStripeErrorCode: none",
     "confirmStripeDeclineCode: none",
+    "confirmStripeErrorMessage: none",
   ]) {
     assert.match(visible, new RegExp(line));
   }
@@ -90,6 +93,7 @@ test("debug derivation leaves shipping invalidation and the confirmation lock un
     confirmStripeErrorType: "none",
     confirmStripeErrorCode: "none",
     confirmStripeDeclineCode: "none",
+    confirmStripeErrorMessage: "none",
   });
   assert.equal(beginCheckoutConfirmation(confirming, cartKey, true), null);
 
@@ -137,7 +141,7 @@ test("the post-click diagnostic marks both Stripe awaits without changing the co
   assert.match(source.slice(afterConfirm, finallyStep), /setConfirmErrorType\(confirmPhase\)/);
 });
 
-test("confirm failures expose only bounded Stripe error classifications", () => {
+test("confirm failures expose bounded classifications and sanitized Stripe messages", () => {
   const returned = checkoutConfirmFailureDiagnostic({
     type: "card_error",
     code: "paymentFailed",
@@ -149,6 +153,7 @@ test("confirm failures expose only bounded Stripe error classifications", () => 
     confirmStripeErrorType: "card_error",
     confirmStripeErrorCode: "paymentFailed",
     confirmStripeDeclineCode: "do_not_honor",
+    confirmStripeErrorMessage: "raw text must not be surfaced",
   });
 
   const rejected = checkoutConfirmFailureDiagnostic({
@@ -161,8 +166,21 @@ test("confirm failures expose only bounded Stripe error classifications", () => 
     confirmStripeErrorType: "IntegrationError",
     confirmStripeErrorCode: "unknown",
     confirmStripeDeclineCode: "none",
+    confirmStripeErrorMessage: "opaque runtime detail",
   });
-  assert.doesNotMatch(JSON.stringify({ returned, rejected }), /raw text|opaque runtime detail/);
+});
+
+test("Stripe diagnostic messages preserve technical text while redacting sensitive values", () => {
+  const diagnostic = safeStripeDiagnosticMessage(
+    "Display the total before confirming cs_test_example_secret_opaque.value~more for buyer@example.com at https://example.com/return using pi_example and 4242 4242 4242 4242.",
+  );
+  assert.equal(
+    diagnostic,
+    "Display the total before confirming [REDACTED] for [REDACTED] at [REDACTED] using [REDACTED] and [REDACTED].",
+  );
+  assert.equal(safeStripeDiagnosticMessage(""), "none");
+  assert.equal(safeStripeDiagnosticMessage(null), "none");
+  assert.ok(safeStripeDiagnosticMessage("x".repeat(800)).length <= 600);
 });
 
 test("a rejected Stripe await exits the confirmation lock without retrying automatically", () => {
