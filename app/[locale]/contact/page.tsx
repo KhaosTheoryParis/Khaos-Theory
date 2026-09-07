@@ -7,6 +7,7 @@ import PublicHeader from "../../public/public-header";
 import { localizedPublicMetadata } from "../../public/public-seo";
 
 const contactEmail = "contact@khaostheoryparis.com";
+const contactPhoneHref = "tel:+33184164778";
 
 type LocalizedContactPageProps = {
   params: Promise<{ locale: string }>;
@@ -31,6 +32,9 @@ export default async function LocalizedContactPage({ params }: LocalizedContactP
         <section id="contact" className="contact" aria-labelledby="contact-title">
           <h1 id="contact-title" className="section-title">{dictionary.contact.title}</h1>
           <a href={`mailto:${contactEmail}`} className="contact-email">{contactEmail}</a>
+          <a href={contactPhoneHref} className="contact-phone">
+            {locale === "fr" ? "01 84 16 47 78" : "+33 1 84 16 47 78"}
+          </a>
         </section>
       </main>
       <PublicFooter locale={locale} />
