@@ -30,6 +30,73 @@
   flex: none;
 }
 
+.localized-public .cart-menu {
+  position: relative;
+  flex: none;
+}
+
+.localized-public .cart-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 40px;
+  padding: 0;
+  color: #f2f2f2;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.localized-public .cart-toggle:hover,
+.localized-public .cart-toggle:focus-visible,
+.localized-public .cart-menu.is-open .cart-toggle {
+  opacity: 0.65;
+}
+
+.localized-public .cart-toggle:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 3px;
+}
+
+.localized-public .cart-submenu {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+
+.localized-public .cart-menu.is-open .cart-submenu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .localized-public .cart-menu:hover .cart-submenu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+
+.localized-public .cart-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.localized-public .cart-submenu .cart-checkout-link {
+  margin-top: 17px;
+}
+
 .localized-public .cart-quantity-badge {
   position: absolute;
   top: -7px;
@@ -284,8 +351,8 @@
 }
 
 .localized-public .shipping-address {
-  margin: 24px 0 2px;
-  padding: 20px;
+  margin: 14px 0 2px;
+  padding: 16px;
   border: 1px solid #222;
 }
 
@@ -296,14 +363,27 @@
 }
 
 .localized-public .shipping-address-hint {
-  margin: 0 0 12px;
+  margin: 0 0 9px;
   color: #bdbdbd;
   font-size: 14px;
   line-height: 1.45;
 }
 
 .localized-public .checkout-elements {
-  margin-top: 22px;
+  margin-top: 14px;
+}
+
+.localized-public .checkout-summary {
+  min-height: auto;
+  padding: 96px 8vw 56px;
+}
+
+.localized-public .checkout-summary .section-title {
+  margin-bottom: 28px;
+}
+
+.localized-public .checkout-summary .checkout-line {
+  padding: 14px 0;
 }
 
 .localized-public .checkout-elements .checkout-status {
@@ -326,40 +406,40 @@
 }
 
 .localized-public .stripe-element-section {
-  margin: 16px 0 0;
-  padding: 20px;
+  margin: 12px 0 0;
+  padding: 16px;
   border: 1px solid #222;
 }
 
 .localized-public .stripe-element-section h2 {
-  margin: 0 0 12px;
+  margin: 0 0 9px;
   font-size: 17px;
   font-weight: 400;
   letter-spacing: 0.08em;
 }
 
 .localized-public .stripe-element-mount {
-  min-height: 48px;
+  min-height: 44px;
 }
 
 .localized-public .shipping-preview-row {
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  margin-top: 16px;
-  padding-top: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid #222;
   font-size: 16px;
   letter-spacing: 0.08em;
 }
 
 .localized-public .checkout-total {
-  margin-top: 14px;
-  padding: 14px 0;
+  margin-top: 10px;
+  padding: 10px 0;
 }
 
 .localized-public .stripe-checkout-button {
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .localized-public .shipping-preview-row strong {
@@ -438,6 +518,18 @@
 }
 
 @media (max-width: 700px) {
+  .localized-public .checkout-summary {
+    padding: 88px 16px 36px;
+  }
+
+  .localized-public .checkout-summary .section-title {
+    margin-bottom: 20px;
+  }
+
+  .localized-public .checkout-summary .checkout-line {
+    padding: 12px 0;
+  }
+
   .localized-public .not-found-main {
     padding: 130px 16px 56px;
   }
@@ -448,7 +540,7 @@
 
   .localized-public .shipping-address,
   .localized-public .stripe-element-section {
-    padding: 16px 12px;
+    padding: 13px 12px;
   }
 
   .localized-public .localized-header-bar {

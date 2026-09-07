@@ -1,9 +1,10 @@
 import type { Locale } from "../i18n/config";
 import { localizedHref } from "../i18n/routes";
-import type { HomeProductId } from "../i18n/types";
+import type { HomeProductId, PublicCategory } from "../i18n/types";
 
 export type PublicProduct = {
   id: HomeProductId;
+  category: PublicCategory;
   price: number;
   images: readonly string[];
   available: true;
@@ -18,12 +19,12 @@ export const ringSizes: readonly RingSize[] = [
 ];
 
 export const publicProductCatalog: readonly PublicProduct[] = [
-  { id: "geometry", price: 250, images: ["/Photos/Rings/KTR-GEOMETRY-001.jpg"], available: true },
-  { id: "carved-cross", price: 200, images: ["/Photos/Rings/KTR-KARVED%20KROSS-001.jpg"], available: true },
-  { id: "hollow-cross", price: 200, images: ["/Photos/Rings/KTR-HOLLOW%20KROSS-001.jpg"], available: true },
-  { id: "signet-corner", price: 200, images: ["/Photos/Rings/KTR-SIGNET%20KORNER-001.jpg", "/Photos/Rings/KTR-SIGNET%20KORNER-002.jpg"], available: true },
-  { id: "damaged-ring-i", price: 150, images: ["/Photos/Rings/KTR-DAMAGED%20RING-001.jpg"], available: true },
-  { id: "damaged-ring-ii", price: 150, images: ["/Photos/Rings/KTR-DAMAGED%20RING-002.jpg"], available: true },
+  { id: "geometry", category: "rings", price: 250, images: ["/Photos/Rings/KTR-GEOMETRY-001.jpg"], available: true },
+  { id: "carved-cross", category: "rings", price: 200, images: ["/Photos/Rings/KTR-KARVED%20KROSS-001.jpg"], available: true },
+  { id: "hollow-cross", category: "rings", price: 200, images: ["/Photos/Rings/KTR-HOLLOW%20KROSS-001.jpg"], available: true },
+  { id: "signet-corner", category: "rings", price: 200, images: ["/Photos/Rings/KTR-SIGNET%20KORNER-001.jpg", "/Photos/Rings/KTR-SIGNET%20KORNER-002.jpg"], available: true },
+  { id: "damaged-ring-i", category: "rings", price: 150, images: ["/Photos/Rings/KTR-DAMAGED%20RING-001.jpg"], available: true },
+  { id: "damaged-ring-ii", category: "rings", price: 150, images: ["/Photos/Rings/KTR-DAMAGED%20RING-002.jpg"], available: true },
 ];
 
 export const homeCatalog = publicProductCatalog.map(({ id, price, images }) => ({ id, price, image: images[0] }));

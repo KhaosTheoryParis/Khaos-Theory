@@ -79,13 +79,16 @@ test("the shared cart icon exposes a total-quantity badge from the persisted car
   const cartSource = readFileSync("app/public/historical-cart.ts", "utf8");
   const css = readFileSync("app/[locale]/localized-home.css", "utf8");
 
-  assert.match(source, /totalHistoricalCartQuantity\(readHistoricalCart\(window\.localStorage\)\)/);
-  assert.match(source, /subscribeToHistoricalCart\(refreshCartQuantity\)/);
+  assert.match(source, /const nextCart = readHistoricalCart\(window\.localStorage\)/);
+  assert.match(source, /setCartQuantity\(totalHistoricalCartQuantity\(nextCart\)\)/);
+  assert.match(source, /subscribeToHistoricalCart\(refreshCart\)/);
   assert.match(source, /cartQuantity > 0 \? <span className="cart-quantity-badge"/);
+  assert.match(source, /locale === "fr" \? "Mon Panier" : "My Kart"/);
+  assert.match(source, /className="cart-checkout-link"/);
   assert.match(cartSource, /HISTORICAL_CART_CHANGE_EVENT/);
   assert.match(cartSource, /totalHistoricalCartQuantity/);
   assert.match(css, /\.cart-quantity-badge\s*\{/);
-  assert.match(css, /\.cart-label\s*\{/);
+  assert.match(css, /\.cart-submenu \.cart-checkout-link\s*\{/);
 });
 
 test("localized public styles keep the header, product details and kart controls compact on narrow screens", () => {
@@ -108,9 +111,10 @@ test("localized public styles retain visible focus, readable disabled states and
 test("checkout spacing stays compact while preserving a full-size payment target", () => {
   const css = readFileSync("app/[locale]/localized-home.css", "utf8");
 
-  assert.match(css, /\.localized-public \.checkout-elements \{\s*margin-top: 22px;/);
-  assert.match(css, /\.localized-public \.stripe-element-section \{\s*margin: 16px 0 0;\s*padding: 20px;/);
-  assert.match(css, /\.localized-public \.stripe-checkout-button \{\s*margin-top: 18px;/);
+  assert.match(css, /\.localized-public \.checkout-elements \{\s*margin-top: 14px;/);
+  assert.match(css, /\.localized-public \.stripe-element-section \{\s*margin: 12px 0 0;\s*padding: 16px;/);
+  assert.match(css, /\.localized-public \.stripe-checkout-button \{\s*margin-top: 14px;/);
+  assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.localized-public \.checkout-summary \{\s*padding: 88px 16px 36px;/);
   assert.match(css, /\.localized-public \.stripe-checkout-button:disabled/);
 });
 

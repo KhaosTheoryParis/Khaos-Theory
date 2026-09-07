@@ -48,6 +48,254 @@
   text-transform: uppercase;
 }
 
+.tabs {
+  width: 100%;
+}
+
+.tabList {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 40px;
+  border-bottom: 1px solid #333;
+  overflow-x: auto;
+}
+
+.tab {
+  min-height: 44px;
+  padding: 10px 14px;
+  color: #999;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab:hover,
+.tab:focus-visible,
+.tab[aria-selected="true"] {
+  color: #f2f2f2;
+}
+
+.tab:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: -3px;
+}
+
+.tab[aria-selected="true"] {
+  border-bottom-color: #f2f2f2;
+}
+
+.tabPanel[hidden] {
+  display: none;
+}
+
+.statisticsPeriod {
+  margin-bottom: 32px;
+  display: grid;
+  gap: 10px;
+}
+
+.statisticsPeriodLabel {
+  color: #999;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.statisticsPeriodOptions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.statisticsPeriodOption {
+  min-height: 40px;
+  padding: 8px 13px;
+  color: #aaa;
+  background: #111;
+  border: 1px solid #333;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.statisticsPeriodOption:hover,
+.statisticsPeriodOption:focus-visible,
+.statisticsPeriodOption[aria-pressed="true"] {
+  color: #f2f2f2;
+  border-color: #f2f2f2;
+}
+
+.statisticsPeriodOption:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+}
+
+.productSelector {
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.productSelectorTrigger {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #f2f2f2;
+  background: #111;
+  border: 1px solid #444;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.productSelectorTrigger:hover,
+.productSelectorTrigger:focus-visible,
+.productSelectorTrigger[aria-expanded="true"] {
+  border-color: #f2f2f2;
+}
+
+.productSelectorTrigger:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+}
+
+.productSelectorPanel {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(520px, 100%);
+  padding: 16px;
+  background: #0b0b0b;
+  border: 1px solid #444;
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.4);
+}
+
+.productSelectorSearch {
+  display: grid;
+  gap: 8px;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.productSelectorSearch input {
+  min-height: 40px;
+  padding: 9px 11px;
+  color: #f2f2f2;
+  background: #111;
+  border: 1px solid #444;
+  font: inherit;
+}
+
+.productSelectorSearch input:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+  border-color: #f2f2f2;
+}
+
+.productSelectorActions {
+  margin-top: 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.productSelectorActions button {
+  min-height: 36px;
+  padding: 7px 10px;
+  color: #ccc;
+  background: transparent;
+  border: 1px solid #333;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.productSelectorActions button:hover,
+.productSelectorActions button:focus-visible {
+  color: #f2f2f2;
+  border-color: #f2f2f2;
+}
+
+.productSelectorActions button:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+}
+
+.productSelectorGroup {
+  margin-top: 18px;
+}
+
+.productSelectorCategory {
+  min-height: 36px;
+  padding: 7px 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f2f2f2;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.productSelectorCategory input {
+  width: 16px;
+  height: 16px;
+  accent-color: #f2f2f2;
+}
+
+.productSelectorCategory + .productSelectorList {
+  padding-left: 12px;
+}
+
+.productSelectorGroup h3 {
+  margin: 0 0 8px;
+  color: #999;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.productSelectorList {
+  max-height: 250px;
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+}
+
+.productSelectorItem {
+  min-height: 40px;
+  padding: 8px 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f2f2f2;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.productSelectorItem input {
+  width: 16px;
+  height: 16px;
+  accent-color: #f2f2f2;
+}
+
+.productSelectorEmpty {
+  margin: 0;
+  color: #999;
+  font-size: 13px;
+}
+
 .refundSection {
   padding-top: 32px;
   border-top: 1px solid #333;
@@ -158,6 +406,13 @@
   font-size: 13px;
 }
 
+.statisticsTableState {
+  min-height: 20px;
+  margin: 20px 0;
+  color: #999;
+  font-size: 13px;
+}
+
 .analyticsError {
   margin-top: 24px;
   padding: 14px;
@@ -171,6 +426,11 @@
 
 .analyticsError p {
   margin: 0;
+}
+
+.analyticsError .statisticsTableState {
+  margin: 0;
+  color: inherit;
 }
 
 .analyticsError button {
@@ -273,6 +533,168 @@
 
 .salesTable tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.salesTableRow {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.salesTableRow:hover {
+  background: #111;
+}
+
+.salesTableRow:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: -2px;
+}
+
+.productDetail {
+  display: grid;
+  gap: 28px;
+}
+
+.productDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #333;
+}
+
+.productDetailHeader h3,
+.productDetailSection h4 {
+  margin: 0;
+  font-weight: 500;
+}
+
+.productDetailHeader h3 {
+  font-size: clamp(22px, 3vw, 30px);
+}
+
+.productDetailBack {
+  min-height: 40px;
+  padding: 8px 12px;
+  flex: none;
+  color: #f2f2f2;
+  background: transparent;
+  border: 1px solid #444;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.productDetailBack:hover,
+.productDetailBack:focus-visible {
+  border-color: #f2f2f2;
+}
+
+.productDetailBack:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+}
+
+.productDetailSections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.productDetailSection {
+  min-height: 130px;
+  padding: 20px;
+  background: #0d0d0d;
+  border: 1px solid #333;
+}
+
+.productDetailSection h4 {
+  font-size: 17px;
+}
+
+.productDetailSection p {
+  margin: 14px 0 0;
+  color: #999;
+  font-size: 13px;
+}
+
+.detailTableWrapper {
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 1px solid #333;
+}
+
+.detailTable {
+  width: 100%;
+  min-width: 250px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.detailTable th,
+.detailTable td {
+  padding: 11px 10px;
+  border-bottom: 1px solid #292929;
+  text-align: left;
+}
+
+.detailTable th {
+  background: #111;
+  color: #999;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.detailTable th button {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.detailTable th button:hover,
+.detailTable th button:focus-visible {
+  color: #f2f2f2;
+}
+
+.detailTable th button:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+}
+
+.detailTable th button span {
+  display: inline-block;
+  width: 14px;
+}
+
+.detailTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.detailEmptyState {
+  color: #999;
+  text-align: center !important;
+}
+
+@media (max-width: 640px) {
+  .productDetailHeader {
+    display: grid;
+  }
+
+  .productDetailBack {
+    width: 100%;
+  }
+
+  .productDetailSections {
+    grid-template-columns: 1fr;
+  }
 }
 
 .sectionHeading {

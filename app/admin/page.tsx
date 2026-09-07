@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { unauthorized } from "next/navigation";
 import { verifyCloudflareAccess } from "../services/cloudflare-access";
+import AdminTabs from "./admin-tabs";
 import styles from "./admin.module.css";
 import OrdersBrowser from "./orders-browser";
 import RefundForm from "./refund-form";
@@ -27,11 +28,17 @@ export default async function AdminPage() {
           <h1>Khaos Theory Admin</h1>
           <p>Authenticated</p>
         </header>
-        <SalesAnalytics />
-        <OrdersBrowser />
-        <div className={styles.refundContainer}>
-          <RefundForm />
-        </div>
+        <AdminTabs
+          operations={
+            <>
+              <OrdersBrowser />
+              <div className={styles.refundContainer}>
+                <RefundForm />
+              </div>
+            </>
+          }
+          analytics={<SalesAnalytics />}
+        />
       </section>
     </main>
   );

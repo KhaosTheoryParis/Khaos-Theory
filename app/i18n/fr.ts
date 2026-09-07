@@ -29,7 +29,7 @@ export const fr = {
     constructionMessage: "Les paiements en ligne ne sont pas encore disponibles.",
     constructionContact: "Kontactez-nous pour commander.",
     tagline: "Joaillerie Kontemporaine",
-    scrollCue: "Faire défiler pour découvrir",
+    scrollCue: "Défiler pour découvrir",
     collectionTitle: "Kollection",
     products: {
       geometry: { name: "Geometry", imageAlt: "Bague Geometry de Khaos Theory" },
@@ -88,8 +88,7 @@ export const fr = {
     ineligibleAddress: "Adresse non éligible à la livraison",
     shippingQuoteError: "Impossible de vérifier l’adresse. Réessayez.",
     billingAddress: "Adresse de facturation",
-    contactDetails: "E-mail",
-    contactDetailsRequired: "Champ obligatoire.",
+    contactDetails: "E-mail *",
     paymentDetails: "Paiement sécurisé",
     securePayment: "Paiement Stripe sécurisé",
     initializingPayment: "Initialisation du paiement sécurisé…",

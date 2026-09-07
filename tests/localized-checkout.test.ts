@@ -132,7 +132,7 @@ test("French checkout copy uses Panier while English copy remains unchanged", ()
   ].join(" ");
 
   assert.doesNotMatch(frenchCartCopy, /\bkart\b/i);
-  assert.equal(fr.home.scrollCue, "Faire défiler pour découvrir");
+  assert.equal(fr.home.scrollCue, "Défiler pour découvrir");
   assert.match(fr.about.message, /À travers ses bijoux/);
   assert.equal(en.home.scrollCue, "Scroll to explore");
   assert.equal(en.navigation.cart, "MY KART");
