@@ -753,6 +753,72 @@
   grid-column: 1 / -1;
 }
 
+.orderSearch {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.orderSearch label {
+  display: grid;
+  gap: 7px;
+  color: #aaa;
+  font-size: 13px;
+}
+
+.orderSearch input {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  color: #f2f2f2;
+  background: #111;
+  border: 1px solid #444;
+  border-radius: 0;
+  font: inherit;
+}
+
+.orderSearch input:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+  border-color: #f2f2f2;
+}
+
+.orderSearch button,
+.secondaryButton {
+  min-height: 44px;
+  padding: 10px 16px;
+  color: #050505;
+  background: #f2f2f2;
+  border: 1px solid #f2f2f2;
+  font: inherit;
+  cursor: pointer;
+}
+
+.secondaryButton,
+.orderSearch .secondaryButton {
+  color: #f2f2f2;
+  background: transparent;
+  border-color: #555;
+}
+
+.orderSearch button:not(:disabled):hover,
+.orderSearch button:not(:disabled):focus-visible,
+.secondaryButton:not(:disabled):hover,
+.secondaryButton:not(:disabled):focus-visible {
+  border-color: #f2f2f2;
+  outline: 1px solid #f2f2f2;
+  outline-offset: 2px;
+}
+
+.orderSearch button:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .filterActions {
   grid-column: 1 / -1;
   display: flex;
@@ -812,7 +878,7 @@
 
 .ordersTable {
   width: 100%;
-  min-width: 1050px;
+  min-width: 620px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -834,6 +900,28 @@
   text-transform: uppercase;
 }
 
+.ordersTable th button {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.ordersTable th button:hover,
+.ordersTable th button:focus-visible {
+  color: #f2f2f2;
+}
+
+.ordersTable th button:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: 3px;
+}
+
 .ordersTable tbody tr:last-child td {
   border-bottom: 0;
 }
@@ -844,6 +932,15 @@
 
 .ordersTable tbody tr:hover {
   background: #121212;
+}
+
+.orderRow {
+  cursor: pointer;
+}
+
+.orderRow:focus-visible {
+  outline: 1px solid #f2f2f2;
+  outline-offset: -2px;
 }
 
 .ordersTable code {
@@ -894,6 +991,134 @@
 .pagination span {
   color: #aaa;
   font-size: 13px;
+}
+
+.orderDetail {
+  display: grid;
+  gap: 30px;
+}
+
+.orderDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #333;
+}
+
+.orderDetailHeader h2 {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3vw, 32px);
+  font-weight: 500;
+}
+
+.orderDetailHeader code,
+.orderDetailList code {
+  overflow-wrap: anywhere;
+  color: #bbb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.orderDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.orderDetailPanel {
+  min-width: 0;
+  padding: 18px;
+  background: #0d0d0d;
+  border: 1px solid #333;
+}
+
+.orderDetailPanel h3,
+.orderProducts h3 {
+  margin: 0 0 14px;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.orderDetailList {
+  margin: 0;
+}
+
+.orderDetailList div {
+  padding: 7px 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.75fr) minmax(0, 1.25fr);
+  gap: 16px;
+  border-bottom: 1px solid #242424;
+}
+
+.orderDetailList div:last-child {
+  border-bottom: 0;
+}
+
+.orderDetailList dt {
+  color: #999;
+}
+
+.orderDetailList dd {
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.dataLimitation {
+  margin: 14px 0 0;
+  color: #777;
+  font-size: 12px;
+}
+
+.orderProducts {
+  min-width: 0;
+}
+
+.orderDetailTable {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.orderDetailTable th,
+.orderDetailTable td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #292929;
+  text-align: left;
+  vertical-align: top;
+}
+
+.orderDetailTable th {
+  color: #999;
+  background: #0d0d0d;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.refundHeading {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.refundHeading p {
+  margin: 8px 0 0;
+  color: #999;
+  font-size: 13px;
+}
+
+.refundHeading .sandboxNotice {
+  margin: 0;
+  flex: none;
 }
 
 .sandboxNotice {
@@ -1136,6 +1361,17 @@
   gap: 20px;
 }
 
+.reviewActions {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr);
+  gap: 10px;
+}
+
+.reviewActions .confirmButton {
+  margin-top: 0;
+}
+
 .review dt {
   color: #999;
 }
@@ -1204,6 +1440,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .orderDetailGrid {
+    grid-template-columns: 1fr;
+  }
+
   .pagination {
     justify-content: space-between;
   }
@@ -1214,6 +1454,40 @@
 }
 
 @media (max-width: 520px) {
+  .orderSearch {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .orderSearch label {
+    grid-column: 1 / -1;
+  }
+
+  .orderSearch button {
+    width: 100%;
+  }
+
+  .orderDetailHeader,
+  .refundHeading {
+    display: grid;
+  }
+
+  .orderDetailHeader .secondaryButton {
+    width: 100%;
+  }
+
+  .orderDetailList div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .orderDetailList dd {
+    text-align: left;
+  }
+
+  .reviewActions {
+    grid-template-columns: 1fr;
+  }
+
   .orderFilters {
     grid-template-columns: 1fr;
   }

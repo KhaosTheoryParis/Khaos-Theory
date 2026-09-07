@@ -4,9 +4,23 @@ import { parisDateRangeToUtc, parseParisCalendarDate } from "./admin-date";
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
 const MAX_QUERY_LENGTH = 200;
+const ORDER_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const PRODUCT_SORT_SQL = `(SELECT MIN(CASE ol_sort.catalog_id
+  WHEN 'geometry' THEN 'Geometry'
+  WHEN 'carved-cross' THEN 'Karved Kross'
+  WHEN 'hollow-cross' THEN 'Hollow Kross'
+  WHEN 'signet-corner' THEN 'Signet Korner'
+  WHEN 'damaged-ring-i' THEN 'Damaged Ring I'
+  WHEN 'damaged-ring-ii' THEN 'Damaged Ring II'
+  ELSE ol_sort.catalog_id END)
+  FROM order_lines ol_sort WHERE ol_sort.order_id = o.id)`;
 
 const SORT_COLUMNS = {
   created_at: "o.created_at",
+  customer_name: "LOWER(COALESCE(o.customer_name, ''))",
+  product: PRODUCT_SORT_SQL,
   amount_total: "o.amount_total",
   customer_email: "o.customer_email",
   status: "o.status",
@@ -89,6 +103,94 @@ export type AdminOrderSummary = {
   lines: AdminOrderLineSummary[];
 };
 
+export type AdminOrderDetailLine = AdminOrderLineSummary & {
+  order_line_id: string;
+  refundable_quantity: number;
+  refundable_amount: number;
+};
+
+export type AdminOrderShippingDetail = {
+  amount: number;
+  country: string | null;
+  zone: string | null;
+  refunded_amount: number;
+  reserved_amount: number;
+  refundable_amount: number;
+};
+
+export type AdminOrderShippingAddress = {
+  name: string | null;
+  line1: string;
+  line2: string | null;
+  postal_code: string;
+  city: string;
+  country: string;
+};
+
+export type AdminStripeCheckoutSession = {
+  id: string;
+  collected_information?: {
+    shipping_details?: {
+      name?: string | null;
+      address?: {
+        line1?: string | null;
+        line2?: string | null;
+        postal_code?: string | null;
+        city?: string | null;
+        country?: string | null;
+      } | null;
+    } | null;
+  } | null;
+};
+
+export type AdminOrderDetail = {
+  id: string;
+  customer_name: string | null;
+  customer_email: string;
+  stripe_checkout_session_id: string;
+  stripe_payment_intent_id: string;
+  pennylane_invoice_id: string;
+  currency: string;
+  products_subtotal: number | null;
+  shipping: AdminOrderShippingDetail | null;
+  shipping_address: AdminOrderShippingAddress | null;
+  amount_total: number;
+  payment_status: string;
+  created_at: string;
+  remaining_refundable_amount: number;
+  lines: AdminOrderDetailLine[];
+};
+
+function normalizedStripeText(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+export function projectAdminShippingAddress(
+  session: AdminStripeCheckoutSession,
+  expectedSessionId: string,
+): AdminOrderShippingAddress | null {
+  if (session.id !== expectedSessionId) return null;
+  const shippingDetails = session.collected_information?.shipping_details;
+  const address = shippingDetails?.address;
+  const line1 = normalizedStripeText(address?.line1);
+  const postalCode = normalizedStripeText(address?.postal_code);
+  const city = normalizedStripeText(address?.city);
+  const country = normalizedStripeText(address?.country);
+
+  if (!line1 || !postalCode || !city || !country) return null;
+
+  return {
+    name: normalizedStripeText(shippingDetails?.name),
+    line1,
+    line2: normalizedStripeText(address?.line2),
+    postal_code: postalCode,
+    city,
+    country,
+  };
+}
+
 export type AdminOrdersResult = {
   orders: AdminOrderSummary[];
   pagination: {
@@ -117,6 +219,22 @@ type OrderLineRow = {
   unit_amount: number;
   refunded_quantity: number;
   reserved_refund_quantity: number;
+};
+
+type OrderDetailRow = OrderRow & {
+  stripe_checkout_session_id: string;
+  stripe_payment_intent_id: string;
+  pennylane_invoice_id: string;
+  products_subtotal: number | null;
+  shipping_amount: number | null;
+  shipping_country: string | null;
+  shipping_zone: string | null;
+  shipping_refunded_amount: number | null;
+  reserved_shipping_refund_amount: number | null;
+};
+
+type OrderDetailLineRow = OrderLineRow & {
+  order_line_id: string;
 };
 
 export class AdminOrdersQueryError extends Error {
@@ -254,6 +372,18 @@ export function parseAdminOrdersSearchParams(searchParams: URLSearchParams): Adm
   };
 }
 
+export function parseAdminOrderDetailSearchParams(searchParams: URLSearchParams) {
+  if (!searchParams.has("order_id")) return null;
+  if ([...searchParams.keys()].some((key) => key !== "order_id")) {
+    throw new AdminOrdersQueryError("CONFLICTING_DETAIL_PARAMETERS");
+  }
+  const orderId = singleValue(searchParams, "order_id");
+  if (!ORDER_ID_PATTERN.test(orderId)) {
+    throw new AdminOrdersQueryError("INVALID_ORDER_ID");
+  }
+  return orderId;
+}
+
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
 }
@@ -274,6 +404,22 @@ function buildWhere(query: AdminOrdersQuery) {
       OR LOWER(o.id) LIKE LOWER(${placeholder}) ESCAPE '\\'
       OR LOWER(o.stripe_checkout_session_id) LIKE LOWER(${placeholder}) ESCAPE '\\'
       OR LOWER(o.stripe_payment_intent_id) LIKE LOWER(${placeholder}) ESCAPE '\\'
+      OR LOWER(o.pennylane_invoice_id) LIKE LOWER(${placeholder}) ESCAPE '\\'
+      OR EXISTS (
+        SELECT 1 FROM order_lines ol_search
+        WHERE ol_search.order_id = o.id
+          AND (
+            LOWER(ol_search.catalog_id) LIKE LOWER(${placeholder}) ESCAPE '\\'
+            OR LOWER(CASE ol_search.catalog_id
+              WHEN 'geometry' THEN 'Geometry'
+              WHEN 'carved-cross' THEN 'Karved Kross'
+              WHEN 'hollow-cross' THEN 'Hollow Kross'
+              WHEN 'signet-corner' THEN 'Signet Korner'
+              WHEN 'damaged-ring-i' THEN 'Damaged Ring I'
+              WHEN 'damaged-ring-ii' THEN 'Damaged Ring II'
+              ELSE ol_search.catalog_id END) LIKE LOWER(${placeholder}) ESCAPE '\\'
+          )
+      )
     )`);
   }
   if (query.name) {
@@ -310,6 +456,84 @@ function buildWhere(query: AdminOrdersQuery) {
   return {
     sql: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",
     values,
+  };
+}
+
+export async function queryAdminOrderDetail(
+  db: OrdersDatabase,
+  orderId: string,
+): Promise<AdminOrderDetail | null> {
+  if (!ORDER_ID_PATTERN.test(orderId)) throw new AdminOrdersQueryError("INVALID_ORDER_ID");
+
+  const order = await db.prepare(
+    `SELECT id, customer_name, customer_email, currency, amount_total, status, created_at,
+            stripe_checkout_session_id, stripe_payment_intent_id, pennylane_invoice_id,
+            products_subtotal, shipping_amount, shipping_country, shipping_zone,
+            shipping_refunded_amount, reserved_shipping_refund_amount
+     FROM orders WHERE id = ?1`,
+  ).bind(orderId).first<OrderDetailRow>();
+  if (!order) return null;
+
+  const lineRows = await db.prepare(
+    `SELECT order_id, order_line_id, catalog_id, size_fr, quantity, unit_amount,
+            refunded_quantity, reserved_refund_quantity
+     FROM order_lines
+     WHERE order_id = ?1
+     ORDER BY created_at ASC, id ASC`,
+  ).bind(orderId).all<OrderDetailLineRow>();
+  if (!lineRows.success) throw new Error("ADMIN_ORDER_DETAIL_LINES_QUERY_FAILED");
+
+  const lines = lineRows.results.map((line): AdminOrderDetailLine => {
+    const refundableQuantity = line.quantity - line.refunded_quantity - line.reserved_refund_quantity;
+    if (refundableQuantity < 0) throw new Error("ADMIN_ORDER_DETAIL_REFUND_STATE_INVALID");
+    return {
+      order_line_id: line.order_line_id,
+      catalog_id: line.catalog_id,
+      product_name: catalogProductName(line.catalog_id),
+      size_fr: line.size_fr,
+      quantity: line.quantity,
+      unit_amount: line.unit_amount,
+      refunded_quantity: line.refunded_quantity,
+      reserved_refund_quantity: line.reserved_refund_quantity,
+      refundable_quantity: refundableQuantity,
+      refundable_amount: refundableQuantity * line.unit_amount,
+    };
+  });
+
+  let shipping: AdminOrderShippingDetail | null = null;
+  if (order.shipping_amount !== null) {
+    const refundedAmount = order.shipping_refunded_amount ?? 0;
+    const reservedAmount = order.reserved_shipping_refund_amount ?? 0;
+    const refundableAmount = order.shipping_amount - refundedAmount - reservedAmount;
+    if (refundableAmount < 0) throw new Error("ADMIN_ORDER_DETAIL_SHIPPING_STATE_INVALID");
+    shipping = {
+      amount: order.shipping_amount,
+      country: order.shipping_country,
+      zone: order.shipping_zone,
+      refunded_amount: refundedAmount,
+      reserved_amount: reservedAmount,
+      refundable_amount: refundableAmount,
+    };
+  }
+
+  return {
+    id: order.id,
+    customer_name: order.customer_name,
+    customer_email: order.customer_email,
+    stripe_checkout_session_id: order.stripe_checkout_session_id,
+    stripe_payment_intent_id: order.stripe_payment_intent_id,
+    pennylane_invoice_id: order.pennylane_invoice_id,
+    currency: order.currency,
+    products_subtotal: order.products_subtotal,
+    shipping,
+    shipping_address: null,
+    amount_total: order.amount_total,
+    payment_status: order.status,
+    created_at: order.created_at,
+    remaining_refundable_amount:
+      lines.reduce((total, line) => total + line.refundable_amount, 0) +
+      (shipping?.refundable_amount ?? 0),
+    lines,
   };
 }
 
@@ -423,6 +647,7 @@ export async function queryAdminOrders(
 type AdminOrdersHandlerDependencies = {
   verifyAccess(headers: Headers): Promise<{ ok: boolean }>;
   getDatabase(): OrdersDatabase | undefined;
+  retrieveCheckoutSession?: (sessionId: string) => Promise<AdminStripeCheckoutSession>;
 };
 
 export function createAdminOrdersGetHandler(dependencies: AdminOrdersHandlerDependencies) {
@@ -432,9 +657,12 @@ export function createAdminOrdersGetHandler(dependencies: AdminOrdersHandlerDepe
       return Response.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    let query: AdminOrdersQuery;
+    let query: AdminOrdersQuery | null = null;
+    let detailOrderId: string | null = null;
     try {
-      query = parseAdminOrdersSearchParams(new URL(request.url).searchParams);
+      const searchParams = new URL(request.url).searchParams;
+      detailOrderId = parseAdminOrderDetailSearchParams(searchParams);
+      if (!detailOrderId) query = parseAdminOrdersSearchParams(searchParams);
     } catch (error) {
       const code = error instanceof AdminOrdersQueryError ? error.code : "INVALID_QUERY";
       return Response.json({ ok: false, error: code }, { status: 400 });
@@ -446,6 +674,33 @@ export function createAdminOrdersGetHandler(dependencies: AdminOrdersHandlerDepe
     }
 
     try {
+      if (detailOrderId) {
+        const order = await queryAdminOrderDetail(db, detailOrderId);
+        if (!order) {
+          return Response.json({ ok: false, error: "ORDER_NOT_FOUND" }, { status: 404 });
+        }
+        let shippingAddress: AdminOrderShippingAddress | null = null;
+        if (dependencies.retrieveCheckoutSession) {
+          try {
+            const session = await dependencies.retrieveCheckoutSession(
+              order.stripe_checkout_session_id,
+            );
+            shippingAddress = projectAdminShippingAddress(
+              session,
+              order.stripe_checkout_session_id,
+            );
+          } catch {
+            // Stripe lookup is optional enrichment; the protected D1 detail remains available.
+          }
+        }
+        return Response.json({
+          ok: true,
+          order: { ...order, shipping_address: shippingAddress },
+        }, {
+          headers: { "Cache-Control": "private, no-store" },
+        });
+      }
+      if (!query) throw new Error("ADMIN_ORDERS_QUERY_MISSING");
       const result = await queryAdminOrders(db, query);
       return Response.json({
         ok: true,

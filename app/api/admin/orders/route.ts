@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
+import Stripe from "stripe";
 import { createAdminOrdersGetHandler } from "../../../services/admin-orders";
 import { verifyCloudflareAccess } from "../../../services/cloudflare-access";
 import type { OrdersDatabase } from "../../../services/orders";
@@ -12,6 +13,17 @@ const getAdminOrders = createAdminOrdersGetHandler({
   getDatabase() {
     const { env } = getCloudflareContext();
     return (env as typeof env & { DB?: OrdersDatabase }).DB;
+  },
+  async retrieveCheckoutSession(sessionId) {
+    const { env } = getCloudflareContext();
+    const secretKey = (env as typeof env & { STRIPE_SECRET_KEY?: string }).STRIPE_SECRET_KEY;
+    if (!secretKey) throw new Error("MISSING_STRIPE_SECRET_KEY");
+    const stripe = new Stripe(secretKey, {
+      timeout: 10_000,
+      maxNetworkRetries: 0,
+      httpClient: Stripe.createFetchHttpClient(),
+    });
+    return stripe.checkout.sessions.retrieve(sessionId);
   },
 });
 

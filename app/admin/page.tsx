@@ -5,7 +5,6 @@ import { verifyCloudflareAccess } from "../services/cloudflare-access";
 import AdminTabs from "./admin-tabs";
 import styles from "./admin.module.css";
 import OrdersBrowser from "./orders-browser";
-import RefundForm from "./refund-form";
 import SalesAnalytics from "./sales-analytics";
 
 export const runtime = "nodejs";
@@ -30,12 +29,7 @@ export default async function AdminPage() {
         </header>
         <AdminTabs
           operations={
-            <>
-              <OrdersBrowser />
-              <div className={styles.refundContainer}>
-                <RefundForm />
-              </div>
-            </>
+            <OrdersBrowser />
           }
           analytics={<SalesAnalytics />}
         />

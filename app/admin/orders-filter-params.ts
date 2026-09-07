@@ -12,6 +12,37 @@ export type OrdersBrowserFilters = {
   direction: "asc" | "desc";
 };
 
+export type OrdersTableSortColumn = "created_at" | "customer_name" | "product";
+export type OrdersTableSort = {
+  column: OrdersTableSortColumn;
+  direction: "asc" | "desc";
+};
+
+export function nextOrdersTableSort(
+  current: OrdersTableSort,
+  column: OrdersTableSortColumn,
+): OrdersTableSort {
+  if (current.column !== column) {
+    return { column, direction: column === "created_at" ? "desc" : "asc" };
+  }
+  return { column, direction: current.direction === "asc" ? "desc" : "asc" };
+}
+
+export function buildOrdersTableSearchParams(
+  query: string,
+  page: number,
+  sort: OrdersTableSort,
+) {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: "25",
+    sort: sort.column,
+    direction: sort.direction,
+  });
+  if (query.trim()) params.set("q", query.trim());
+  return params;
+}
+
 function centsFromEuros(value: string) {
   const normalized = value.trim().replace(",", ".");
   if (!normalized) return null;

@@ -15,14 +15,55 @@ type RefundPreview = {
   order_id: string;
   amount: number;
   currency: string;
+  shipping?: { label: string; amount: number } | null;
   lines: RefundPreviewLine[];
 };
+
+type RefundableLine = {
+  order_line_id: string;
+  unit_amount: number;
+  refundable_quantity: number;
+};
+
+export function selectedRefundLines(
+  lines: RefundableLine[],
+  quantities: Record<string, number>,
+) {
+  return lines.flatMap((line) => {
+    const quantity = quantities[line.order_line_id] ?? 0;
+    return Number.isSafeInteger(quantity) && quantity > 0 && quantity <= line.refundable_quantity
+      ? [{ orderLineId: line.order_line_id, quantity }]
+      : [];
+  });
+}
+
+export function estimatedRefundAmount({
+  lines,
+  quantities,
+  refundShipping,
+  shippingAmount,
+}: {
+  lines: RefundableLine[];
+  quantities: Record<string, number>;
+  refundShipping: boolean;
+  shippingAmount: number;
+}) {
+  const products = lines.reduce((total, line) => {
+    const quantity = quantities[line.order_line_id] ?? 0;
+    return total + (Number.isSafeInteger(quantity) && quantity > 0 && quantity <= line.refundable_quantity
+      ? line.unit_amount * quantity
+      : 0);
+  }, 0);
+  return products + (refundShipping ? shippingAmount : 0);
+}
 
 export function validateRefundPreviewResponse({
   preview,
   orderId,
   currency,
   selections,
+  refundShipping = false,
+  shippingAmount = 0,
 }: {
   preview: RefundPreview;
   orderId: string;
@@ -35,19 +76,33 @@ export function validateRefundPreviewResponse({
     unitAmount: number;
     quantity: number;
   }>;
+  refundShipping?: boolean;
+  shippingAmount?: number;
 }) {
   const operationIdPattern =
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!operationIdPattern.test(preview.refund_operation_id) ||
     preview.order_id !== orderId || preview.currency !== currency ||
-    preview.lines.length !== selections.length || selections.length === 0) {
+    preview.lines.length !== selections.length ||
+    (selections.length === 0 && !refundShipping)) {
+    return false;
+  }
+
+  const previewShipping = preview.shipping ?? null;
+  if (refundShipping) {
+    if (!Number.isSafeInteger(shippingAmount) || shippingAmount <= 0 ||
+      !previewShipping || previewShipping.amount !== shippingAmount ||
+      typeof previewShipping.label !== "string" || !previewShipping.label.trim()) {
+      return false;
+    }
+  } else if (previewShipping !== null) {
     return false;
   }
 
   const expectedById = new Map(selections.map((selection) => [selection.orderLineId, selection]));
   if (expectedById.size !== selections.length) return false;
   const seen = new Set<string>();
-  let computedTotal = 0;
+  let computedTotal = refundShipping ? shippingAmount : 0;
 
   for (const line of preview.lines) {
     const expected = expectedById.get(line.order_line_id);
@@ -67,6 +122,26 @@ export function validateRefundPreviewResponse({
   return seen.size === selections.length &&
     Number.isSafeInteger(preview.amount) && preview.amount > 0 &&
     preview.amount === computedTotal;
+}
+
+export function buildRefundPreviewPayload({
+  orderId,
+  lines,
+  refundShipping,
+}: {
+  orderId: string;
+  lines: Array<{ orderLineId: string; quantity: number }>;
+  refundShipping: boolean;
+}) {
+  return {
+    action: "preview",
+    order_id: orderId,
+    lines: lines.map((line) => ({
+      order_line_id: line.orderLineId,
+      quantity: line.quantity,
+    })),
+    refundShipping,
+  } as const;
 }
 
 export class AdminRefundRequestTimeoutError extends Error {
@@ -114,11 +189,15 @@ export async function fetchAdminRefundRequest(
 export function buildRefundRequestPayload({
   lines,
   operationId,
+  orderId,
+  refundShipping = false,
 }: {
   lines: Array<{ orderLineId: string; quantity: number }>;
   operationId: string;
+  orderId?: string;
+  refundShipping?: boolean;
 }) {
-  return {
+  const payload = {
     action: "refund",
     lines: lines.map((line) => ({
       order_line_id: line.orderLineId,
@@ -126,4 +205,7 @@ export function buildRefundRequestPayload({
     })),
     refund_operation_id: operationId,
   } as const;
+  return orderId
+    ? { ...payload, order_id: orderId, refundShipping }
+    : payload;
 }

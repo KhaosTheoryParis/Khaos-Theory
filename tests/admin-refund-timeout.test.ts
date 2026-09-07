@@ -11,8 +11,11 @@ import {
 } from "../app/services/admin-refund-stripe";
 import {
   AdminRefundRequestTimeoutError,
+  buildRefundPreviewPayload,
   buildRefundRequestPayload,
+  estimatedRefundAmount,
   fetchAdminRefundRequest,
+  selectedRefundLines,
   validateRefundPreviewResponse,
 } from "../app/admin/refund-request";
 
@@ -127,6 +130,73 @@ test("the frontend rejects any preview line or total mismatch", () => {
     currency: "eur",
     selections: [selection],
   }), false);
+});
+
+test("the transaction UI calculates selections locally but validates products and shipping against the server preview", () => {
+  const orderId = "11111111-1111-4111-8111-111111111111";
+  const lineId = "22222222-2222-4222-8222-222222222222";
+  const lines = [{ order_line_id: lineId, unit_amount: 25_000, refundable_quantity: 2 }];
+  const quantities = { [lineId]: 2 };
+  const selected = selectedRefundLines(lines, quantities);
+  assert.deepEqual(selected, [{ orderLineId: lineId, quantity: 2 }]);
+  assert.equal(estimatedRefundAmount({
+    lines, quantities, refundShipping: true, shippingAmount: 1_000,
+  }), 51_000);
+  assert.deepEqual(buildRefundPreviewPayload({ orderId, lines: selected, refundShipping: true }), {
+    action: "preview",
+    order_id: orderId,
+    lines: [{ order_line_id: lineId, quantity: 2 }],
+    refundShipping: true,
+  });
+
+  const preview = {
+    refund_operation_id: OPERATION_ID,
+    order_id: orderId,
+    amount: 51_000,
+    currency: "eur",
+    shipping: { label: "Livraison sécurisée / Secure shipping", amount: 1_000 },
+    lines: [{
+      order_line_id: lineId,
+      catalog_id: "geometry",
+      product_name: "Geometry",
+      size_fr: 48,
+      unit_amount: 25_000,
+      requested_quantity: 2,
+      amount: 50_000,
+    }],
+  };
+  assert.equal(validateRefundPreviewResponse({
+    preview,
+    orderId,
+    currency: "eur",
+    selections: [{ orderLineId: lineId, catalogId: "geometry", productName: "Geometry",
+      sizeFr: 48, unitAmount: 25_000, quantity: 2 }],
+    refundShipping: true,
+    shippingAmount: 1_000,
+  }), true);
+  assert.equal(validateRefundPreviewResponse({
+    preview: { ...preview, shipping: { ...preview.shipping, amount: 1 } },
+    orderId,
+    currency: "eur",
+    selections: [{ orderLineId: lineId, catalogId: "geometry", productName: "Geometry",
+      sizeFr: 48, unitAmount: 25_000, quantity: 2 }],
+    refundShipping: true,
+    shippingAmount: 1_000,
+  }), false);
+});
+
+test("the final transaction refund payload preserves the reviewed operation and explicit shipping intent", () => {
+  const orderId = "11111111-1111-4111-8111-111111111111";
+  const line = { orderLineId: "22222222-2222-4222-8222-222222222222", quantity: 1 };
+  assert.deepEqual(buildRefundRequestPayload({
+    lines: [line], operationId: OPERATION_ID, orderId, refundShipping: true,
+  }), {
+    action: "refund",
+    lines: [{ order_line_id: line.orderLineId, quantity: 1 }],
+    refund_operation_id: OPERATION_ID,
+    order_id: orderId,
+    refundShipping: true,
+  });
 });
 
 test("multiple selected lines still produce one global Stripe Refund request", async () => {

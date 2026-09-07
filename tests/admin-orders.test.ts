@@ -3,12 +3,21 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import test from "node:test";
 import { formatAdminDateTime } from "../app/services/admin-date";
-import { buildOrdersSearchParams, type OrdersBrowserFilters } from "../app/admin/orders-filter-params";
+import {
+  buildOrdersSearchParams,
+  buildOrdersTableSearchParams,
+  nextOrdersTableSort,
+  type OrdersBrowserFilters,
+} from "../app/admin/orders-filter-params";
 import {
   AdminOrdersQueryError,
   createAdminOrdersGetHandler,
+  parseAdminOrderDetailSearchParams,
   parseAdminOrdersSearchParams,
+  projectAdminShippingAddress,
+  queryAdminOrderDetail,
   queryAdminOrders,
+  type AdminStripeCheckoutSession,
 } from "../app/services/admin-orders";
 import type { OrdersDatabase, OrdersPreparedStatement } from "../app/services/orders";
 
@@ -64,6 +73,7 @@ type SeedOrder = {
   quantity: number;
   refunded: number;
   reserved?: number;
+  shipping: number;
 };
 
 const SEED_ORDERS: SeedOrder[] = [
@@ -77,6 +87,7 @@ const SEED_ORDERS: SeedOrder[] = [
     size: 48,
     quantity: 1,
     refunded: 0,
+    shipping: 1_000,
   },
   {
     id: "22222222-2222-4222-8222-222222222222",
@@ -88,6 +99,7 @@ const SEED_ORDERS: SeedOrder[] = [
     size: 58,
     quantity: 2,
     refunded: 1,
+    shipping: 0,
   },
   {
     id: "33333333-3333-4333-8333-333333333333",
@@ -99,14 +111,22 @@ const SEED_ORDERS: SeedOrder[] = [
     size: 48,
     quantity: 1,
     refunded: 1,
+    shipping: 0,
   },
 ];
 
 function adminOrdersDatabase() {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync("migrations/0001_create_orders.sql", "utf8"));
-  sqlite.exec(readFileSync("migrations/0002_create_refund_operations.sql", "utf8"));
-  sqlite.exec(readFileSync("migrations/0008_add_order_customer_name.sql", "utf8"));
+  for (const migration of [
+    "migrations/0001_create_orders.sql",
+    "migrations/0002_create_refund_operations.sql",
+    "migrations/0003_track_refund_credit_notes.sql",
+    "migrations/0006_harden_refund_operations.sql",
+    "migrations/0007_create_multi_line_refund_operations.sql",
+    "migrations/0008_add_order_customer_name.sql",
+    "migrations/0009_add_shipping_to_orders.sql",
+    "migrations/0010_add_shipping_refunds.sql",
+  ]) sqlite.exec(readFileSync(migration, "utf8"));
 
   for (const [index, order] of SEED_ORDERS.entries()) {
     const suffix = String(index + 1).padStart(8, "0");
@@ -114,8 +134,10 @@ function adminOrdersDatabase() {
       `INSERT INTO orders (
         id, stripe_checkout_session_id, stripe_payment_intent_id,
         pennylane_invoice_id, customer_name, customer_email, currency, amount_total,
+        products_subtotal, shipping_amount, shipping_country, shipping_zone,
+        shipping_refunded_amount, reserved_shipping_refund_amount,
         status, schema_version, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'eur', ?, 'paid', 1, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, 'eur', ?, ?, ?, 'FR', 'FR', 0, 0, 'paid', 1, ?, ?)`,
     ).run(
       order.id,
       `cs_test_admin${suffix}`,
@@ -123,7 +145,9 @@ function adminOrdersDatabase() {
       `invoice-admin-${suffix}`,
       order.customerName,
       order.email,
+      order.amount + order.shipping,
       order.amount,
+      order.shipping,
       order.date,
       order.date,
     );
@@ -185,17 +209,23 @@ function addAugust28Order(db: SQLiteDatabaseAdapter) {
 
 test("the admin orders endpoint rejects an unauthenticated request", async () => {
   let databaseRead = false;
+  let stripeRead = false;
   const handler = createAdminOrdersGetHandler({
     verifyAccess: async () => ({ ok: false }),
     getDatabase: () => {
       databaseRead = true;
       return adminOrdersDatabase();
     },
+    retrieveCheckoutSession: async () => {
+      stripeRead = true;
+      return { id: "cs_test_never_read" };
+    },
   });
   const response = await handler(new Request("https://example.test/api/admin/orders"));
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { ok: false, error: "UNAUTHORIZED" });
   assert.equal(databaseRead, false);
+  assert.equal(stripeRead, false);
 });
 
 test("admin orders pagination defaults to 25 and applies server-side pages", async () => {
@@ -206,6 +236,23 @@ test("admin orders pagination defaults to 25 and applies server-side pages", asy
   assert.equal(page.pagination.total_pages, 2);
   assert.equal(page.orders.length, 1);
   assert.equal(page.orders[0]?.customer_email, "carol@example.test");
+});
+
+test("the Commandes table sends one server search and cycles sortable columns", () => {
+  const params = buildOrdersTableSearchParams(
+    "  Geometry  ",
+    2,
+    { column: "product", direction: "asc" },
+  );
+  assert.equal(params.toString(), "page=2&page_size=25&sort=product&direction=asc&q=Geometry");
+  assert.deepEqual(
+    nextOrdersTableSort({ column: "created_at", direction: "desc" }, "customer_name"),
+    { column: "customer_name", direction: "asc" },
+  );
+  assert.deepEqual(
+    nextOrdersTableSort({ column: "customer_name", direction: "asc" }, "customer_name"),
+    { column: "customer_name", direction: "desc" },
+  );
 });
 
 test("global search finds an email and an order ID", async () => {
@@ -224,6 +271,188 @@ test("global search finds an email and an order ID", async () => {
 
   const customerName = await queryAdminOrders(db, parsed("q=vincent"));
   assert.deepEqual(customerName.orders.map((order) => order.id), [SEED_ORDERS[0]?.id]);
+
+  const productName = await queryAdminOrders(db, parsed("q=Hollow%20Kross"));
+  assert.deepEqual(productName.orders.map((order) => order.id), [SEED_ORDERS[1]?.id]);
+
+  const productReference = await queryAdminOrders(db, parsed("q=geometry"));
+  assert.deepEqual(productReference.orders.map((order) => order.id), [SEED_ORDERS[0]?.id]);
+
+  const invoice = await queryAdminOrders(db, parsed("q=invoice-admin-00000002"));
+  assert.deepEqual(invoice.orders.map((order) => order.id), [SEED_ORDERS[1]?.id]);
+});
+
+test("a strict detail lookup returns operational and refundable D1 fields", async () => {
+  const db = adminOrdersDatabase();
+  const orderId = SEED_ORDERS[0]?.id ?? "";
+  assert.equal(parseAdminOrderDetailSearchParams(new URLSearchParams(`order_id=${orderId}`)), orderId);
+  assert.throws(
+    () => parseAdminOrderDetailSearchParams(new URLSearchParams(`order_id=${orderId}&page=1`)),
+    (error) => error instanceof AdminOrdersQueryError && error.code === "CONFLICTING_DETAIL_PARAMETERS",
+  );
+
+  const detail = await queryAdminOrderDetail(db, orderId);
+  assert.ok(detail);
+  assert.equal(detail.customer_name, "Vincent Gerard");
+  assert.equal(detail.stripe_payment_intent_id, "pi_admin00000001");
+  assert.equal(detail.stripe_checkout_session_id, "cs_test_admin00000001");
+  assert.equal(detail.pennylane_invoice_id, "invoice-admin-00000001");
+  assert.equal(detail.products_subtotal, 25_000);
+  assert.equal(detail.shipping?.amount, 1_000);
+  assert.equal(detail.shipping?.refundable_amount, 1_000);
+  assert.equal(detail.shipping_address, null);
+  assert.equal(detail.amount_total, 26_000);
+  assert.equal(detail.lines[0]?.refundable_quantity, 1);
+  assert.equal(detail.remaining_refundable_amount, 26_000);
+});
+
+test("the Stripe shipping projection exposes only the complete Admin address and supports no line2", () => {
+  const sessionId = "cs_test_admin00000001";
+  const complete = projectAdminShippingAddress({
+    id: sessionId,
+    collected_information: {
+      shipping_details: {
+        name: "Ada Lovelace",
+        address: {
+          line1: "10 rue de Test",
+          line2: "Bâtiment B",
+          postal_code: "75001",
+          city: "Paris",
+          country: "FR",
+        },
+      },
+    },
+  }, sessionId);
+  assert.deepEqual(complete, {
+    name: "Ada Lovelace",
+    line1: "10 rue de Test",
+    line2: "Bâtiment B",
+    postal_code: "75001",
+    city: "Paris",
+    country: "FR",
+  });
+  assert.deepEqual(Object.keys(complete ?? {}).sort(), [
+    "city", "country", "line1", "line2", "name", "postal_code",
+  ]);
+
+  const withoutLine2 = projectAdminShippingAddress({
+    id: sessionId,
+    collected_information: {
+      shipping_details: {
+        name: "Ada Lovelace",
+        address: { line1: "10 rue de Test", postal_code: "75001", city: "Paris", country: "FR" },
+      },
+    },
+  }, sessionId);
+  assert.equal(withoutLine2?.line2, null);
+});
+
+test("the Stripe shipping projection returns no invented address when Stripe data is absent or mismatched", () => {
+  const sessionId = "cs_test_admin00000001";
+  assert.equal(projectAdminShippingAddress({ id: sessionId }, sessionId), null);
+  assert.equal(projectAdminShippingAddress({
+    id: sessionId,
+    collected_information: { shipping_details: { address: { country: "FR" } } },
+  }, sessionId), null);
+  assert.equal(projectAdminShippingAddress({
+    id: "cs_test_another",
+    collected_information: {
+      shipping_details: {
+        address: { line1: "10 rue de Test", postal_code: "75001", city: "Paris", country: "FR" },
+      },
+    },
+  }, sessionId), null);
+});
+
+test("the protected Admin endpoint serves one strict order detail without listing history", async () => {
+  let stripeReads = 0;
+  const stripeSession = {
+    id: "cs_test_admin00000001",
+    collected_information: {
+      shipping_details: {
+        name: "Ada Lovelace",
+        address: {
+          line1: "10 rue de Test",
+          postal_code: "75001",
+          city: "Paris",
+          country: "FR",
+        },
+      },
+    },
+    client_secret: "must-never-reach-the-admin-response",
+    metadata: { private_marker: "must-never-reach-the-admin-response" },
+  } as AdminStripeCheckoutSession & {
+    client_secret: string;
+    metadata: { private_marker: string };
+  };
+  const handler = createAdminOrdersGetHandler({
+    verifyAccess: async () => ({ ok: true }),
+    getDatabase: () => adminOrdersDatabase(),
+    retrieveCheckoutSession: async () => {
+      stripeReads += 1;
+      return stripeSession;
+    },
+  });
+  const orderId = SEED_ORDERS[0]?.id ?? "";
+  const response = await handler(new Request(
+    `https://example.test/api/admin/orders?order_id=${orderId}`,
+  ));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const body = await response.json() as {
+    ok: boolean;
+    order: { id: string; lines: unknown[]; shipping_address: unknown };
+  };
+  assert.equal(body.ok, true);
+  assert.equal(body.order.id, orderId);
+  assert.equal(body.order.lines.length, 1);
+  assert.deepEqual(body.order.shipping_address, {
+    name: "Ada Lovelace",
+    line1: "10 rue de Test",
+    line2: null,
+    postal_code: "75001",
+    city: "Paris",
+    country: "FR",
+  });
+  assert.equal(JSON.stringify(body).includes("must-never-reach-the-admin-response"), false);
+  assert.equal(stripeReads, 1);
+
+  const missing = await handler(new Request(
+    "https://example.test/api/admin/orders?order_id=99999999-9999-4999-8999-999999999999",
+  ));
+  assert.equal(missing.status, 404);
+  assert.deepEqual(await missing.json(), { ok: false, error: "ORDER_NOT_FOUND" });
+  assert.equal(stripeReads, 1);
+
+  const list = await handler(new Request("https://example.test/api/admin/orders?page=1"));
+  assert.equal(list.status, 200);
+  assert.equal(stripeReads, 1);
+});
+
+test("a failed Stripe address enrichment does not fail the protected D1 order detail", async () => {
+  const handler = createAdminOrdersGetHandler({
+    verifyAccess: async () => ({ ok: true }),
+    getDatabase: () => adminOrdersDatabase(),
+    retrieveCheckoutSession: async () => {
+      throw new Error("STRIPE_UNAVAILABLE");
+    },
+  });
+  const orderId = SEED_ORDERS[0]?.id ?? "";
+  const response = await handler(new Request(
+    `https://example.test/api/admin/orders?order_id=${orderId}`,
+  ));
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: boolean; order: { shipping_address: unknown } };
+  assert.equal(body.ok, true);
+  assert.equal(body.order.shipping_address, null);
+});
+
+test("the transaction detail renders the projected address and an explicit unavailable state", () => {
+  const source = readFileSync("app/admin/orders-browser.tsx", "utf8");
+  for (const field of ["name", "line1", "line2", "postal_code", "city", "country"]) {
+    assert.match(source, new RegExp(`shipping_address\\.${field}`));
+  }
+  assert.match(source, /Adresse de livraison indisponible dans Stripe\./);
 });
 
 test("customer name search is partial, case-insensitive and NULL-compatible", async () => {
@@ -319,7 +548,17 @@ test("combined filters use AND semantics and derive refund status", async () => 
 test("an allowed sort is applied server-side", async () => {
   const db = adminOrdersDatabase();
   const result = await queryAdminOrders(db, parsed("sort=amount_total&direction=asc"));
-  assert.deepEqual(result.orders.map((order) => order.amount_total), [20_000, 25_000, 40_000]);
+  assert.deepEqual(result.orders.map((order) => order.amount_total), [20_000, 26_000, 40_000]);
+
+  const byCustomer = await queryAdminOrders(db, parsed("sort=customer_name&direction=asc"));
+  assert.deepEqual(byCustomer.orders.map((order) => order.customer_name), [
+    null, "Alice Martin", "Vincent Gerard",
+  ]);
+
+  const byProduct = await queryAdminOrders(db, parsed("sort=product&direction=asc"));
+  assert.deepEqual(byProduct.orders.map((order) => order.lines[0]?.product_name), [
+    "Geometry", "Hollow Kross", "Karved Kross",
+  ]);
 });
 
 test("amount and payment filters use the values stored in D1", async () => {
