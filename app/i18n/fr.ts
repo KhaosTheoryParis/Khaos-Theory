@@ -152,5 +152,6 @@ export const fr = {
   },
   footer: {
     city: "PARIS",
+    contact: "Contact",
   },
 } satisfies TranslationDictionary;

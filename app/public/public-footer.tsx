@@ -13,6 +13,7 @@ export default function PublicFooter({ locale }: PublicFooterProps) {
     <footer>
       <span>© 2026 {dictionary.brand}</span>
       <span>{dictionary.footer.city}</span>
+      <a href={localizedHref(locale, "contact")}>{dictionary.footer.contact}</a>
       <a href={localizedHref(locale, "legal")}>{dictionary.common.legalNotice}</a>
     </footer>
   );
