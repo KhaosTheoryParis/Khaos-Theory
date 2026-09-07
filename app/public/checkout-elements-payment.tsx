@@ -10,6 +10,7 @@ import type {
 } from "@stripe/stripe-js";
 import type { TranslationDictionary } from "../i18n";
 import type { Locale } from "../i18n/config";
+import { localizedHref } from "../i18n/routes";
 import { checkoutSessionItems } from "./checkout-cart";
 import {
   beginCheckoutConfirmation,
@@ -37,6 +38,10 @@ type ShippingUpdateResult =
   | { ok: true; session: StripeCheckoutSession; shippingAmount: number; amountTotal: number }
   | { ok: false; reason: "ineligible" | "error" };
 
+type TermsAcceptanceResult =
+  | { ok: true; session: StripeCheckoutSession }
+  | { ok: false };
+
 const SHIPPING_UPDATE_DEBOUNCE_MS = 300;
 
 export default function CheckoutElementsPayment({ cart, locale, dictionary }: CheckoutElementsPaymentProps) {
@@ -55,6 +60,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
   const [statusText, setStatusText] = useState(dictionary.checkout.initializingPayment);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
   const [initializationFailed, setInitializationFailed] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const shippingMountRef = useRef<HTMLDivElement>(null);
   const billingMountRef = useRef<HTMLDivElement>(null);
   const contactMountRef = useRef<HTMLDivElement>(null);
@@ -79,6 +85,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setDisplayTotal(null);
     setStatusText(dictionary.checkout.initializingPayment);
     setInitializationFailed(false);
+    setTermsAccepted(false);
     let active = true;
     let checkoutSdk: StripeCheckoutElementsSdk | null = null;
     let shippingElement: StripeAddressElement | null = null;
@@ -237,11 +244,16 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setShippingAmount(null);
     setDisplayTotal(null);
     setInitializationFailed(false);
+    setTermsAccepted(false);
     setStatusText(dictionary.checkout.initializingPayment);
     setInitializationAttempt((attempt) => attempt + 1);
   }
 
   async function confirmPayment() {
+    if (!termsAccepted) {
+      setStatusText(dictionary.checkout.termsAcceptanceRequired);
+      return;
+    }
     const actions = actionsRef.current;
     const shippingElement = shippingElementRef.current;
     const shippingMount = shippingMountRef.current;
@@ -304,6 +316,16 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     setDisplayTotal(shippingResult.session.total.total.amount);
     setStatusText(dictionary.checkout.confirmingPayment);
 
+    const termsResult = await runAuthoritativeTermsAcceptance(actions, config);
+    if (generationRef.current !== generation) return;
+    if (!termsResult.ok) {
+      const failed = { ...gateRef.current, status: "error" as const, validatedAddressRevision: null };
+      gateRef.current = failed;
+      setGateState(failed);
+      setStatusText(dictionary.checkout.termsAcceptanceError);
+      return;
+    }
+
     try {
       const validation = await actions.validateElements();
       if (generationRef.current !== generation || gateRef.current.addressRevision !== checkingGate.addressRevision) return;
@@ -346,7 +368,7 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
     }
   }
 
-  const confirmEnabled = canConfirmCheckoutElements(gate, cartKey, stripeCanConfirm);
+  const confirmEnabled = canConfirmCheckoutWithTerms(gate, cartKey, stripeCanConfirm, termsAccepted);
   const isShippingUpdating = gate.status === "initializing" || gate.status === "checking";
   const isConfirming = gate.status === "confirming";
   const isProcessing = isShippingUpdating || isConfirming;
@@ -387,6 +409,23 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       {displayTotal !== null ? (
         <div className="checkout-total"><span>{dictionary.checkout.total}</span><strong>{displayTotal}</strong></div>
       ) : null}
+      <div className="checkout-terms-acceptance">
+        <input
+          id={`checkout-terms-${locale}`}
+          type="checkbox"
+          checked={termsAccepted}
+          onChange={(event) => setTermsAccepted(event.currentTarget.checked)}
+          disabled={isConfirming}
+          required
+        />
+        <label htmlFor={`checkout-terms-${locale}`}>
+          {dictionary.checkout.termsAcceptancePrefix}
+          <a href={localizedHref(locale, "terms")} target="_blank" rel="noopener noreferrer">
+            {dictionary.checkout.termsAcceptanceLink}
+          </a>
+          .
+        </label>
+      </div>
       <button
         className={`stripe-checkout-button${isConfirming ? " stripe-checkout-button--processing" : ""}`}
         type="button"
@@ -411,6 +450,15 @@ export default function CheckoutElementsPayment({ cart, locale, dictionary }: Ch
       </p>
     </section>
   );
+}
+
+export function canConfirmCheckoutWithTerms(
+  gate: CheckoutElementsGate,
+  cartKey: string,
+  stripeCanConfirm: boolean,
+  termsAccepted: boolean,
+) {
+  return termsAccepted && canConfirmCheckoutElements(gate, cartKey, stripeCanConfirm);
 }
 
 export function createShippingAddressConfirmationLifecycle(
@@ -483,6 +531,43 @@ export async function runAuthoritativeShippingUpdate(
     return { ok: false, reason: "error" };
   }
   return { ok: true, session: result.session, ...amounts };
+}
+
+export async function runAuthoritativeTermsAcceptance(
+  actions: Pick<StripeCheckoutLoadActionsSuccess, "runServerUpdate">,
+  config: CheckoutElementsSessionConfig,
+  fetcher: typeof fetch = fetch,
+): Promise<TermsAcceptanceResult> {
+  let responseBody: unknown;
+  let result: Awaited<ReturnType<typeof actions.runServerUpdate>>;
+  try {
+    result = await actions.runServerUpdate(async () => {
+      const response = await fetcher("/api/checkout/accept-terms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkoutSessionId: config.checkoutSessionId,
+          clientSecret: config.clientSecret,
+        }),
+      });
+      responseBody = await response.json() as unknown;
+      if (!response.ok) throw new Error("CHECKOUT_TERMS_ACCEPTANCE_REJECTED");
+      return responseBody;
+    });
+  } catch {
+    return { ok: false };
+  }
+
+  if (
+    result.type !== "success" ||
+    !isRecord(responseBody) ||
+    responseBody.accepted !== true ||
+    result.session.id !== config.checkoutSessionId ||
+    result.session.livemode !== false
+  ) {
+    return { ok: false };
+  }
+  return { ok: true, session: result.session };
 }
 
 export function parseElementsSessionConfig(value: unknown): CheckoutElementsSessionConfig | null {

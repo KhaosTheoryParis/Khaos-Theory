@@ -451,6 +451,36 @@
   padding: 8px 0;
 }
 
+.localized-public .checkout-terms-acceptance {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  margin-top: 10px;
+  color: #d3d3d3;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.localized-public .checkout-terms-acceptance input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: #f2f2f2;
+}
+
+.localized-public .checkout-terms-acceptance a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.localized-public .checkout-terms-acceptance a:hover,
+.localized-public .checkout-terms-acceptance a:focus-visible {
+  color: #fff;
+}
+
 .localized-public .stripe-checkout-button {
   margin-top: 14px;
 }

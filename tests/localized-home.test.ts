@@ -111,10 +111,12 @@ test("localized public styles retain visible focus, readable disabled states and
 test("checkout spacing stays compact while preserving a full-size payment target", () => {
   const css = readFileSync("app/[locale]/localized-home.css", "utf8");
 
-  assert.match(css, /\.localized-public \.checkout-elements \{\s*margin-top: 14px;/);
-  assert.match(css, /\.localized-public \.stripe-element-section \{\s*margin: 12px 0 0;\s*padding: 16px;/);
+  assert.match(css, /\.localized-public \.checkout-elements \{[\s\S]*?margin-top: 14px;/);
+  assert.match(css, /\.localized-public \.stripe-element-section \{[\s\S]*?margin: 14px 0 0;[\s\S]*?padding: 12px;/);
   assert.match(css, /\.localized-public \.stripe-checkout-button \{\s*margin-top: 14px;/);
-  assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.localized-public \.checkout-summary \{\s*padding: 88px 16px 36px;/);
+  assert.match(css, /\.localized-public \.checkout-terms-acceptance \{[\s\S]*?min-height: 44px;/);
+  assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.localized-public \.checkout-summary \{\s*padding: 118px 16px 30px;/);
+  assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.localized-public \.stripe-element-section \{\s*padding: 10px 12px;[\s\S]*?margin-top: 12px;/);
   assert.match(css, /\.localized-public \.stripe-checkout-button:disabled/);
 });
 

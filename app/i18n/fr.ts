@@ -99,6 +99,10 @@ export const fr = {
     confirmingPayment: "Confirmation du paiement…",
     checkoutInitializationError: "Impossible de préparer le paiement sécurisé. Réessayez.",
     retryCheckout: "RÉESSAYER",
+    termsAcceptancePrefix: "J’ai lu et j’accepte les ",
+    termsAcceptanceLink: "Conditions Générales de Vente",
+    termsAcceptanceRequired: "Vous devez accepter les Conditions Générales de Vente avant le paiement.",
+    termsAcceptanceError: "Impossible d’enregistrer votre acceptation. Réessayez.",
   },
   success: {
     title: "Commande reçue",

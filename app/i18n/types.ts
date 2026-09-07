@@ -93,6 +93,10 @@ export type TranslationDictionary = {
     confirmingPayment: string;
     checkoutInitializationError: string;
     retryCheckout: string;
+    termsAcceptancePrefix: string;
+    termsAcceptanceLink: string;
+    termsAcceptanceRequired: string;
+    termsAcceptanceError: string;
   };
   success: {
     title: string;

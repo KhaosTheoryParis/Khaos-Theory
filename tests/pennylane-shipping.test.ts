@@ -4,6 +4,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import test from "node:test";
 import type Stripe from "stripe";
 import type { OrdersDatabase, OrdersPreparedStatement } from "../app/services/orders";
+import { CURRENT_TERMS_VERSION } from "../app/services/checkout-terms";
 import {
   getPennylaneErrorDetails,
   syncPaidCheckoutSessionToPennylane,
@@ -29,6 +30,7 @@ const migrations = [
   "0008_add_order_customer_name.sql",
   "0009_add_shipping_to_orders.sql",
   "0010_add_shipping_refunds.sql",
+  "0011_add_order_terms_acceptance.sql",
 ];
 
 class StatementAdapter implements OrdersPreparedStatement {
@@ -485,6 +487,63 @@ test("checkout.session.completed persists normalized paid shipping", async () =>
       row?.shipping_zone, row?.amount_total],
     [39_000, 1_000, "FR", "FR", 40_000],
   );
+});
+
+test("checkout.session.completed requires and persists authoritative terms on new sessions", async () => {
+  const checkoutSession = session({ shippingAmount: 1_000 });
+  checkoutSession.metadata = {
+    ...checkoutSession.metadata,
+    terms_required: CURRENT_TERMS_VERSION,
+    terms_version: CURRENT_TERMS_VERSION,
+    terms_accepted_at: "2026-09-07T10:11:12.000Z",
+  };
+  const db = new DatabaseAdapter();
+  const mock = mockPennylane();
+
+  await withPennylaneMock(mock, () => processStripeEvent({
+    event: checkoutCompletedEvent(checkoutSession),
+    env: {
+      STRIPE_SECRET_KEY: "sk_test_not_real",
+      PENNYLANE_API_TOKEN: "fake-pennylane-token",
+      DB: db,
+    },
+    stripe: stripeFor(checkoutSession),
+    trace: () => undefined,
+  }));
+
+  const row = db.sqlite.prepare(
+    "SELECT terms_version, terms_accepted_at FROM orders",
+  ).get();
+  assert.deepEqual(
+    [row?.terms_version, row?.terms_accepted_at],
+    [CURRENT_TERMS_VERSION, "2026-09-07T10:11:12.000Z"],
+  );
+});
+
+test("a new paid session without terms acceptance is rejected before Pennylane and D1", async () => {
+  const checkoutSession = session({ shippingAmount: 1_000 });
+  checkoutSession.metadata = {
+    ...checkoutSession.metadata,
+    terms_required: CURRENT_TERMS_VERSION,
+  };
+  const db = new DatabaseAdapter();
+  const mock = mockPennylane();
+
+  await assert.rejects(
+    withPennylaneMock(mock, () => processStripeEvent({
+      event: checkoutCompletedEvent(checkoutSession),
+      env: {
+        STRIPE_SECRET_KEY: "sk_test_not_real",
+        PENNYLANE_API_TOKEN: "fake-pennylane-token",
+        DB: db,
+      },
+      stripe: stripeFor(checkoutSession),
+      trace: () => undefined,
+    })),
+    /CHECKOUT_TERMS_ACCEPTANCE_REQUIRED/,
+  );
+  assert.equal(mock.fetchCalls, 0);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM orders").get()?.count, 0);
 });
 
 test("checkout.session.completed keeps a legacy order shipping-free", async () => {

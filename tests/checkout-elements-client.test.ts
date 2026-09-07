@@ -13,9 +13,11 @@ import {
   invalidateCheckoutCart,
 } from "../app/public/checkout-elements-gate";
 import CheckoutElementsPayment, {
+  canConfirmCheckoutWithTerms,
   createShippingAddressConfirmationLifecycle,
   parseElementsSessionConfig,
   runAuthoritativeShippingUpdate,
+  runAuthoritativeTermsAcceptance,
   stripeShippingDetails,
 } from "../app/public/checkout-elements-payment";
 import { checkoutSessionItems } from "../app/public/checkout-cart";
@@ -70,15 +72,55 @@ test("the inactive Elements checkout renders localized FR and EN structure with 
   assert.match(frHtml, /Adresse de facturation/);
   assert.match(frHtml, />E-mail \*</);
   assert.match(frHtml, /Paiement sécurisé/);
+  assert.match(frHtml, /J’ai lu et j’accepte les/);
+  assert.match(frHtml, /href="\/fr\/terms"/);
+  assert.match(frHtml, />Conditions Générales de Vente</);
   assert.match(enHtml, /Shipping address/);
   assert.match(enHtml, /Shipping costs will be calculated after you enter your delivery address\./);
   assert.match(enHtml, /Billing address/);
   assert.match(enHtml, />Email \*</);
   assert.match(enHtml, /Secure payment/);
+  assert.match(enHtml, /I have read and accept the/);
+  assert.match(enHtml, /href="\/en\/terms"/);
+  assert.match(enHtml, />Terms and Conditions</);
+  assert.match(frHtml, /type="checkbox"/);
+  assert.match(frHtml, /type="checkbox"[^>]*required/);
+  assert.doesNotMatch(frHtml, /type="checkbox"[^>]*checked/);
   assert.match(frHtml, /checkout-elements--initializing/);
   assert.match(frHtml, /aria-busy="true"/);
   assert.match(frHtml, /<button[^>]*disabled=""/);
   assert.match(enHtml, /<button[^>]*disabled=""/);
+});
+
+test("confirmation remains technically closed until terms are accepted", () => {
+  const cartKey = "geometry:48:1";
+  let gate = invalidateCheckoutAddress(createCheckoutElementsGate(cartKey), true);
+  gate = finishCheckoutAddressValidation(gate, gate.addressRevision, "eligible");
+
+  assert.equal(canConfirmCheckoutWithTerms(gate, cartKey, true, false), false);
+  assert.equal(canConfirmCheckoutWithTerms(gate, cartKey, true, true), true);
+  assert.equal(canConfirmCheckoutWithTerms(gate, cartKey, false, true), false);
+});
+
+test("terms acceptance sends session proof only and no browser-selected version or timestamp", async () => {
+  let requestBody: unknown;
+  const actions = {
+    runServerUpdate: async (callback: () => Promise<unknown>) => {
+      await callback();
+      return { type: "success" as const, session: checkoutSession() };
+    },
+  };
+  const result = await runAuthoritativeTermsAcceptance(actions, config, async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body)) as unknown;
+    return Response.json({ accepted: true });
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(requestBody, {
+    checkoutSessionId: config.checkoutSessionId,
+    clientSecret: config.clientSecret,
+  });
+  assert.doesNotMatch(JSON.stringify(requestBody), /terms|version|accepted_at|timestamp/i);
 });
 
 test("missing or non-test publishable configuration is rejected before Stripe.js initialization", () => {
@@ -323,14 +365,16 @@ test("a successful confirmation leaves the Shipping Address Element detached for
 
 test("shipping validation finishes before unmount and confirm runs only while the Element is detached", () => {
   const source = readFileSync("app/public/checkout-elements-payment.tsx", "utf8");
-  const validate = source.indexOf("await actions.validateElements()");
+  const termsAcceptance = source.indexOf("await runAuthoritativeTermsAcceptance(actions, config)");
+  const validate = source.indexOf("await actions.validateElements()", termsAcceptance);
   const unmount = source.indexOf("shippingElementLifecycle.unmountBeforeConfirm()", validate);
   const confirm = source.indexOf('await actions.confirm({ redirect: "always" })', unmount);
   const markSucceeded = source.indexOf("shippingElementLifecycle.markConfirmationSucceeded()", confirm);
   const finallyBlock = source.indexOf("} finally {", markSucceeded);
   const restore = source.indexOf("shippingElementLifecycle.restoreAfterFailure()", finallyBlock);
 
-  assert.ok(validate >= 0);
+  assert.ok(termsAcceptance >= 0);
+  assert.ok(validate > termsAcceptance);
   assert.ok(unmount > validate);
   assert.ok(confirm > unmount);
   assert.ok(markSucceeded > confirm);
@@ -372,6 +416,8 @@ test("the FR and EN Elements UI use the modern typed API and no deprecated callb
   assert.match(source, /sdk\.on\("change"/);
   assert.match(source, /setStripeCanConfirm\(session\.canConfirm\)/);
   assert.match(source, /runServerUpdate/);
+  assert.match(source, /runAuthoritativeTermsAcceptance/);
+  assert.match(source, /if \(!termsAccepted\)/);
   assert.match(source, /validateElements/);
   assert.match(source, /\.confirm\(\{ redirect: "always" \}\)/);
   assert.match(source, /beginCheckoutConfirmation/);

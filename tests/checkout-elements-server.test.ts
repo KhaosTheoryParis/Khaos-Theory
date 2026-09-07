@@ -2,9 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import type Stripe from "stripe";
-import { handleCheckoutShippingUpdate, handleCreateCheckoutSession } from "../app/services/checkout-elements-http";
+import {
+  handleCheckoutShippingUpdate,
+  handleCheckoutTermsAcceptance,
+  handleCreateCheckoutSession,
+} from "../app/services/checkout-elements-http";
+import { CURRENT_TERMS_VERSION } from "../app/services/checkout-terms";
 import {
   CHECKOUT_ELEMENTS_FLOW,
+  parseCheckoutTermsAcceptanceBody,
   parseCheckoutShippingUpdateBody,
   type CheckoutSessionUpdateParams,
   type CreateCheckoutSessionPort,
@@ -13,6 +19,7 @@ import {
 
 const CREATE_URL = "https://example.test/api/create-checkout-session";
 const UPDATE_URL = "https://example.test/api/checkout/update-shipping";
+const TERMS_URL = "https://example.test/api/checkout/accept-terms";
 const SESSION_ID = "cs_test_khaosElements";
 const CLIENT_SECRET = `${SESSION_ID}_secret_opaque-token.with:punctuation`;
 
@@ -85,6 +92,9 @@ test("Checkout Elements creation uses only the server catalog and the typed serv
   assert.equal(params.line_items?.[0]?.price_data?.unit_amount, 25_000);
   assert.equal(params.line_items?.[0]?.quantity, 1);
   assert.equal(params.metadata?.checkout_flow, CHECKOUT_ELEMENTS_FLOW);
+  assert.equal(params.metadata?.terms_required, CURRENT_TERMS_VERSION);
+  assert.equal(params.metadata?.terms_version, undefined);
+  assert.equal(params.metadata?.terms_accepted_at, undefined);
 });
 
 test("Checkout Elements creation preserves the validated English locale", async () => {
@@ -243,11 +253,135 @@ function openSession(productsSubtotal = 25_000, overrides: Record<string, unknow
       schema_version: "1",
       checkout_flow: CHECKOUT_ELEMENTS_FLOW,
       checkout_locale: "fr",
+      terms_required: CURRENT_TERMS_VERSION,
     },
     total_details: { amount_discount: 0, amount_shipping: 0, amount_tax: 0 },
     ...overrides,
   } as unknown as Stripe.Checkout.Session;
 }
+
+function shippableSession(overrides: Record<string, unknown> = {}) {
+  const session = openSession();
+  return {
+    ...updatedSession(session, {
+      collected_information: {
+        shipping_details: {
+          name: "Test Customer",
+          address: {
+            country: "FR",
+            postal_code: "75001",
+            city: "Paris",
+            line1: "1 rue de Test",
+          },
+        },
+      },
+      shipping_options: [{
+        shipping_rate_data: {
+          display_name: "Livraison sécurisée",
+          type: "fixed_amount",
+          fixed_amount: { amount: 1_000, currency: "eur" },
+        },
+      }],
+    }),
+    ...overrides,
+  } as Stripe.Checkout.Session;
+}
+
+function termsDependencies(session = shippableSession()) {
+  const updates: CheckoutSessionUpdateParams[] = [];
+  const stripe: UpdateCheckoutSessionPort = {
+    retrieve: async () => session,
+    listLineItems: async () => ({
+      object: "list",
+      data: [lineItem()],
+      has_more: false,
+      url: "/v1/checkout/sessions/line_items",
+    }),
+    update: async (_id, params) => {
+      updates.push(params);
+      return {
+        ...session,
+        metadata: { ...session.metadata, ...params.metadata },
+      } as Stripe.Checkout.Session;
+    },
+  };
+  return {
+    secretKey: "sk_test_not_real",
+    stripe,
+    updates,
+    now: () => new Date("2026-09-07T10:11:12.000Z"),
+  };
+}
+
+function termsBody() {
+  return { checkoutSessionId: SESSION_ID, clientSecret: CLIENT_SECRET };
+}
+
+test("terms acceptance records the server version and timestamp on the owned shippable session", async () => {
+  const dependencies = termsDependencies();
+  const response = await handleCheckoutTermsAcceptance(
+    jsonRequest(TERMS_URL, termsBody()),
+    dependencies,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { accepted: true });
+  assert.equal(dependencies.updates.length, 1);
+  assert.deepEqual(dependencies.updates[0]?.metadata, {
+    terms_version: CURRENT_TERMS_VERSION,
+    terms_accepted_at: "2026-09-07T10:11:12.000Z",
+  });
+});
+
+test("a human retry reuses the first authoritative acceptance timestamp", async () => {
+  const session = shippableSession({
+    metadata: {
+      ...shippableSession().metadata,
+      terms_version: CURRENT_TERMS_VERSION,
+      terms_accepted_at: "2026-09-07T09:00:00.000Z",
+    },
+  });
+  const dependencies = termsDependencies(session);
+  const response = await handleCheckoutTermsAcceptance(
+    jsonRequest(TERMS_URL, termsBody()),
+    dependencies,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { accepted: true });
+  assert.equal(dependencies.updates.length, 0);
+});
+
+test("the browser cannot choose a terms version, timestamp or free acceptance value", async () => {
+  assert.deepEqual(parseCheckoutTermsAcceptanceBody(termsBody()), termsBody());
+
+  for (const extra of [
+    { terms_version: "1900-01" },
+    { terms_accepted_at: "1900-01-01T00:00:00.000Z" },
+    { accepted: true },
+  ]) {
+    const dependencies = termsDependencies();
+    const response = await handleCheckoutTermsAcceptance(
+      jsonRequest(TERMS_URL, { ...termsBody(), ...extra }),
+      dependencies,
+    );
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { accepted: false });
+    assert.equal(dependencies.updates.length, 0);
+  }
+});
+
+test("terms acceptance is rejected until server-authoritative shipping is present", async () => {
+  const dependencies = termsDependencies(openSession());
+  const response = await handleCheckoutTermsAcceptance(
+    jsonRequest(TERMS_URL, termsBody()),
+    dependencies,
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { accepted: false });
+  assert.equal(dependencies.updates.length, 0);
+});
 
 function updatedSession(
   base: Stripe.Checkout.Session,
@@ -503,7 +637,9 @@ test("server update rejects client financial fields and never accepts an address
 test("server-side Checkout Elements code contains no personal-data logging", () => {
   const sources = [
     "app/api/create-checkout-session/route.ts",
+    "app/api/checkout/accept-terms/route.ts",
     "app/api/checkout/update-shipping/route.ts",
+    "app/services/checkout-terms.ts",
     "app/services/checkout-elements-http.ts",
     "app/services/stripe-checkout-elements.ts",
   ].map((path) => readFileSync(path, "utf8")).join("\n");

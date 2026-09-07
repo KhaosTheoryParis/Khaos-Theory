@@ -10,6 +10,7 @@ import {
   type OrdersPreparedStatement,
   type PersistOrderInput,
 } from "../app/services/orders";
+import { CURRENT_TERMS_VERSION } from "../app/services/checkout-terms";
 import { resolveCheckoutShipping } from "../app/services/stripe-checkout-shipping";
 
 const migrations = [
@@ -23,6 +24,7 @@ const migrations = [
   "0008_add_order_customer_name.sql",
   "0009_add_shipping_to_orders.sql",
   "0010_add_shipping_refunds.sql",
+  "0011_add_order_terms_acceptance.sql",
 ];
 
 class StatementAdapter implements OrdersPreparedStatement {
@@ -76,7 +78,42 @@ class DatabaseAdapter implements OrdersDatabase {
   }
 }
 
-function order(shipping: PersistOrderInput["shipping"] = null): PersistOrderInput {
+test("migration 0011 preserves existing orders and leaves historical acceptance NULL", () => {
+  const sqlite = new DatabaseSync(":memory:");
+  for (const migration of migrations.slice(0, -1)) {
+    sqlite.exec(readFileSync(`migrations/${migration}`, "utf8"));
+  }
+  sqlite.prepare(
+    `INSERT INTO orders (
+      id, stripe_checkout_session_id, stripe_payment_intent_id,
+      pennylane_invoice_id, customer_email, currency, amount_total,
+      status, schema_version, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    "historical-order",
+    "cs_test_historicalTerms",
+    "pi_historicalTerms",
+    "invoice-historical-terms",
+    "historical@example.test",
+    "eur",
+    25_000,
+    "paid",
+    1,
+    "2026-08-30T12:00:00.000Z",
+    "2026-08-30T12:00:00.000Z",
+  );
+
+  sqlite.exec(readFileSync("migrations/0011_add_order_terms_acceptance.sql", "utf8"));
+  const row = sqlite.prepare(
+    "SELECT terms_version, terms_accepted_at FROM orders WHERE id = ?",
+  ).get("historical-order");
+  assert.deepEqual([row?.terms_version, row?.terms_accepted_at], [null, null]);
+});
+
+function order(
+  shipping: PersistOrderInput["shipping"] = null,
+  termsAcceptance: PersistOrderInput["termsAcceptance"] = null,
+): PersistOrderInput {
   return {
     stripeCheckoutSessionId: "cs_test_shippingPersistence",
     stripePaymentIntentId: "pi_shippingPersistence",
@@ -89,6 +126,7 @@ function order(shipping: PersistOrderInput["shipping"] = null): PersistOrderInpu
     status: "paid",
     schemaVersion: 1,
     createdAt: "2026-08-30T12:00:00.000Z",
+    termsAcceptance,
     lines: [{
       orderLineId: "11111111-1111-4111-8111-111111111111",
       stripeLineItemId: "li_shippingPersistence",
@@ -100,6 +138,57 @@ function order(shipping: PersistOrderInput["shipping"] = null): PersistOrderInpu
     }],
   };
 }
+
+test("current terms acceptance is persisted while historical orders remain nullable", async () => {
+  const db = new DatabaseAdapter();
+  const historical = order();
+  await persistPaidOrder(db, historical);
+
+  const historicalRow = db.sqlite.prepare(
+    "SELECT terms_version, terms_accepted_at FROM orders WHERE stripe_checkout_session_id = ?",
+  ).get(historical.stripeCheckoutSessionId);
+  assert.deepEqual(
+    [historicalRow?.terms_version, historicalRow?.terms_accepted_at],
+    [null, null],
+  );
+
+  const accepted = order(null, {
+    termsVersion: CURRENT_TERMS_VERSION,
+    termsAcceptedAt: "2026-09-07T10:11:12.000Z",
+  });
+  accepted.stripeCheckoutSessionId = "cs_test_termsPersistence";
+  accepted.stripePaymentIntentId = "pi_termsPersistence";
+  accepted.pennylaneInvoiceId = "invoice-terms-persistence";
+  accepted.lines = [{
+    ...accepted.lines[0],
+    orderLineId: "22222222-2222-4222-8222-222222222222",
+    stripeLineItemId: "li_termsPersistence",
+    pennylaneInvoiceLineId: "invoice-line-terms-persistence",
+  }];
+  await persistPaidOrder(db, accepted);
+
+  const acceptedRow = db.sqlite.prepare(
+    "SELECT terms_version, terms_accepted_at FROM orders WHERE stripe_checkout_session_id = ?",
+  ).get(accepted.stripeCheckoutSessionId);
+  assert.deepEqual(
+    [acceptedRow?.terms_version, acceptedRow?.terms_accepted_at],
+    [CURRENT_TERMS_VERSION, "2026-09-07T10:11:12.000Z"],
+  );
+});
+
+test("order persistence rejects a client-selected or malformed terms acceptance", async () => {
+  const db = new DatabaseAdapter();
+  const invalid = order(null, {
+    termsVersion: "1900-01",
+    termsAcceptedAt: "not-a-timestamp",
+  } as unknown as PersistOrderInput["termsAcceptance"]);
+
+  await assert.rejects(
+    persistPaidOrder(db, invalid),
+    (error) => getOrderPersistenceErrorDetails(error).code === "INVALID_ORDER_PERSISTENCE_INPUT",
+  );
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM orders").get()?.count, 0);
+});
 
 function stripeSession({
   productsSubtotal = 25_000,

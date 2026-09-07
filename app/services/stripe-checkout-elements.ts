@@ -1,5 +1,10 @@
 import Stripe from "stripe";
 import { isLocale, type Locale } from "../i18n/config";
+import {
+  CURRENT_TERMS_VERSION,
+  isCanonicalUtcTimestamp,
+  readCheckoutTermsAcceptance,
+} from "./checkout-terms";
 import { validateFrShippingDestination } from "./fr-shipping-destination";
 import {
   CHECKOUT_CURRENCY,
@@ -7,6 +12,7 @@ import {
   rebuildCheckoutCartFromStripeLineItems,
   type PreparedCheckoutCart,
 } from "./checkout-catalog";
+import { resolveCheckoutShipping } from "./stripe-checkout-shipping";
 import { quoteShipping } from "./shipping";
 
 export const CHECKOUT_ELEMENTS_FLOW = "khaos_fr_shipping_elements_v1";
@@ -50,6 +56,11 @@ export type CheckoutShippingUpdateBody = {
   checkoutSessionId: string;
   clientSecret: string;
   shippingDetails: CheckoutShippingDetails;
+};
+
+export type CheckoutTermsAcceptanceBody = {
+  checkoutSessionId: string;
+  clientSecret: string;
 };
 
 export class CheckoutElementsError extends Error {
@@ -96,10 +107,112 @@ export function checkoutElementsSessionParams(
       schema_version: "1",
       checkout_flow: CHECKOUT_ELEMENTS_FLOW,
       checkout_locale: locale,
+      terms_required: CURRENT_TERMS_VERSION,
     },
     line_items: cart.lineItems,
     return_url: checkoutElementsReturnUrl(siteUrl, locale),
   };
+}
+
+export function parseCheckoutTermsAcceptanceBody(value: unknown): CheckoutTermsAcceptanceBody | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["checkoutSessionId", "clientSecret"])) {
+    return null;
+  }
+
+  const { checkoutSessionId, clientSecret } = value;
+  if (
+    typeof checkoutSessionId !== "string" ||
+    !/^cs_test_[A-Za-z0-9_]+$/u.test(checkoutSessionId) ||
+    checkoutSessionId.length > 255
+  ) {
+    return null;
+  }
+
+  const clientSecretPrefix = `${checkoutSessionId}_secret_`;
+  if (
+    typeof clientSecret !== "string" ||
+    !clientSecret.startsWith(clientSecretPrefix) ||
+    clientSecret.length < clientSecretPrefix.length + CHECKOUT_CLIENT_SECRET_MIN_SUFFIX_LENGTH ||
+    clientSecret.length > CHECKOUT_CLIENT_SECRET_MAX_LENGTH
+  ) {
+    return null;
+  }
+
+  return { checkoutSessionId, clientSecret };
+}
+
+export async function acceptCheckoutTerms({
+  body,
+  stripe,
+  now = () => new Date(),
+}: {
+  body: CheckoutTermsAcceptanceBody;
+  stripe: UpdateCheckoutSessionPort;
+  now?: () => Date;
+}) {
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.retrieve(body.checkoutSessionId);
+  } catch {
+    throw new CheckoutElementsError(400, "INVALID_CHECKOUT_SESSION");
+  }
+
+  await assertOwnedShippingSession(session, body);
+  if (session.metadata?.terms_required !== CURRENT_TERMS_VERSION) {
+    throw new CheckoutElementsError(400, "INVALID_CHECKOUT_SESSION");
+  }
+
+  let lineItems: Stripe.ApiList<Stripe.LineItem>;
+  try {
+    lineItems = await stripe.listLineItems(session.id);
+  } catch {
+    throw new CheckoutElementsError(502, "CHECKOUT_LINE_ITEMS_UNAVAILABLE");
+  }
+  if (lineItems.has_more) throw new CheckoutElementsError(400, "INVALID_CHECKOUT_LINE_ITEMS");
+
+  const cart = rebuildCheckoutCartFromStripeLineItems(lineItems.data);
+  if (!cart) throw new CheckoutElementsError(400, "INVALID_CHECKOUT_LINE_ITEMS");
+  try {
+    if (!resolveCheckoutShipping(session, cart.productsSubtotal)) {
+      throw new Error("MISSING_CHECKOUT_SHIPPING");
+    }
+  } catch {
+    throw new CheckoutElementsError(400, "INVALID_CHECKOUT_SESSION");
+  }
+
+  if (
+    session.metadata.terms_version === CURRENT_TERMS_VERSION &&
+    isCanonicalUtcTimestamp(session.metadata.terms_accepted_at)
+  ) {
+    return readCheckoutTermsAcceptance(session);
+  }
+
+  const termsAcceptedAt = now().toISOString();
+  let updated: Stripe.Checkout.Session;
+  try {
+    updated = await stripe.update(
+      session.id,
+      {
+        metadata: {
+          terms_version: CURRENT_TERMS_VERSION,
+          terms_accepted_at: termsAcceptedAt,
+        },
+      },
+      { idempotencyKey: `terms-v1:${session.id}:${CURRENT_TERMS_VERSION}` },
+    );
+  } catch {
+    throw new CheckoutElementsError(502, "CHECKOUT_TERMS_UPDATE_FAILED");
+  }
+
+  try {
+    await assertOwnedShippingSession(updated, body);
+    if (!resolveCheckoutShipping(updated, cart.productsSubtotal)) {
+      throw new Error("MISSING_CHECKOUT_SHIPPING");
+    }
+    return readCheckoutTermsAcceptance(updated);
+  } catch {
+    throw new CheckoutElementsError(502, "INVALID_UPDATED_CHECKOUT_SESSION");
+  }
 }
 
 export function parseCheckoutShippingUpdateBody(value: unknown): CheckoutShippingUpdateBody | null {
@@ -270,7 +383,7 @@ export async function updateCheckoutShipping({
 
 async function assertOwnedShippingSession(
   session: Stripe.Checkout.Session,
-  body: CheckoutShippingUpdateBody,
+  body: Pick<CheckoutShippingUpdateBody, "checkoutSessionId" | "clientSecret">,
 ) {
   const allowedCountries = session.shipping_address_collection?.allowed_countries;
   if (

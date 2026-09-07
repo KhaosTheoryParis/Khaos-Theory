@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { readCheckoutTermsAcceptance } from "./checkout-terms";
 import {
   getPennylaneErrorDetails,
   syncMultiLineRefundToPennylane,
@@ -81,6 +82,7 @@ async function createPennylaneInvoice(
   trace: WebhookTrace,
 ) {
   const sessionId = session.id;
+  const termsAcceptance = readCheckoutTermsAcceptance(session);
   trace("create_pennylane_invoice", "start", event);
   let processingErrorCode: string | null = null;
 
@@ -187,6 +189,7 @@ async function createPennylaneInvoice(
             status: "paid",
             schemaVersion: 1,
             createdAt: result.createdAt,
+            termsAcceptance,
             lines: result.orderLineMappings,
           });
           trace("d1.write_orders", "success", event, {

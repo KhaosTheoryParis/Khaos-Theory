@@ -99,6 +99,10 @@ export const en = {
     confirmingPayment: "Confirming payment…",
     checkoutInitializationError: "Unable to prepare secure payment. Please try again.",
     retryCheckout: "TRY AGAIN",
+    termsAcceptancePrefix: "I have read and accept the ",
+    termsAcceptanceLink: "Terms and Conditions",
+    termsAcceptanceRequired: "You must accept the Terms and Conditions before payment.",
+    termsAcceptanceError: "Unable to record your acceptance. Please try again.",
   },
   success: {
     title: "Order received",

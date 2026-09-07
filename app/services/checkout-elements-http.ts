@@ -1,8 +1,10 @@
 import type Stripe from "stripe";
 import { resolveCheckoutLocale } from "./checkout-locale";
 import {
+  acceptCheckoutTerms,
   CheckoutElementsError,
   checkoutElementsSessionParams,
+  parseCheckoutTermsAcceptanceBody,
   prepareCheckoutElementsCart,
   updateCheckoutShipping,
   parseCheckoutShippingUpdateBody,
@@ -12,6 +14,7 @@ import {
 
 const MAX_CREATE_REQUEST_BYTES = 32_768;
 const MAX_UPDATE_REQUEST_BYTES = 4_096;
+const MAX_TERMS_REQUEST_BYTES = 2_048;
 const CHECKOUT_KEYS = ["items", "locale"] as const;
 
 export type CheckoutRuntime = {
@@ -29,6 +32,10 @@ export type CreateCheckoutDependencies = {
 export type UpdateShippingDependencies = {
   secretKey: string;
   stripe: UpdateCheckoutSessionPort;
+};
+
+export type AcceptTermsDependencies = UpdateShippingDependencies & {
+  now?: () => Date;
 };
 
 export async function handleCreateCheckoutSession(
@@ -122,6 +129,34 @@ export async function handleCheckoutShippingUpdate(
   }
 }
 
+export async function handleCheckoutTermsAcceptance(
+  request: Request,
+  dependencies: AcceptTermsDependencies,
+) {
+  if (!dependencies.secretKey.startsWith("sk_test_")) {
+    return acceptedResponse(false, 503);
+  }
+
+  const parsedBody = await readStrictJson(request, MAX_TERMS_REQUEST_BYTES);
+  if (!parsedBody.ok) return acceptedResponse(false, parsedBody.status);
+  const body = parseCheckoutTermsAcceptanceBody(parsedBody.body);
+  if (!body) return acceptedResponse(false, 400);
+
+  try {
+    const acceptance = await acceptCheckoutTerms({
+      body,
+      stripe: dependencies.stripe,
+      now: dependencies.now,
+    });
+    return acceptedResponse(acceptance !== null, acceptance === null ? 500 : 200);
+  } catch (error) {
+    if (error instanceof CheckoutElementsError) {
+      return acceptedResponse(false, error.status);
+    }
+    return acceptedResponse(false, 500);
+  }
+}
+
 function isCheckoutRequestBody(value: unknown): value is { items: unknown; locale?: unknown } {
   if (!isRecord(value)) return false;
   const keys = Object.keys(value).sort();
@@ -170,6 +205,13 @@ function json(body: object, status: number) {
 function updatedResponse(updated: boolean, status: number) {
   return Response.json(
     { updated },
+    { status, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+function acceptedResponse(accepted: boolean, status: number) {
+  return Response.json(
+    { accepted },
     { status, headers: { "Cache-Control": "no-store" } },
   );
 }
