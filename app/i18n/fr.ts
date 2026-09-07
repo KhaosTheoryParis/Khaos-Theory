@@ -55,7 +55,7 @@ export const fr = {
     cartUnavailable: "Impossible de mettre à jour votre panier. Réessayez.",
     sizeNote: "Les équivalences de tailles françaises et américaines sont indicatives.",
     craftsmanshipFirstParagraph: "Tous nos bijoux sont réalisés en argent .925. Chaque finition étant réalisée à la main, les détails peuvent varier, rendant chaque pièce unique.",
-    craftsmanshipSecondParagraph: "Chaque pièce est fabriquée à la commande, et les délais de production peuvent varier.",
+    craftsmanshipSecondParagraph: "Chaque pièce Khaos Theory est fabriquée à la commande. Le délai de fabrication est généralement de 4 à 6 semaines à compter de la confirmation de la commande. Ce délai n’inclut pas le délai d’acheminement après expédition.",
     previousImage: "Photo précédente",
     nextImage: "Photo suivante",
     photo: "photo",

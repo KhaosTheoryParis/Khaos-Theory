@@ -55,7 +55,7 @@ export const en = {
     cartUnavailable: "Unable to update your kart. Please try again.",
     sizeNote: "French and US size equivalents are indicative.",
     craftsmanshipFirstParagraph: "All our items are made from .925 silver. Because every finish is completed by hand, details may vary, making each piece unique.",
-    craftsmanshipSecondParagraph: "Every item is made to order, and production times may vary.",
+    craftsmanshipSecondParagraph: "Every Khaos Theory piece is made to order. Production generally takes 4 to 6 weeks from order confirmation. This timeframe does not include delivery time after dispatch.",
     previousImage: "Previous photo",
     nextImage: "Next photo",
     photo: "photo",
