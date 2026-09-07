@@ -3,6 +3,7 @@ import {
   isCanonicalUtcTimestamp,
   type CheckoutTermsAcceptance,
 } from "./checkout-terms";
+import { isLocale, type Locale } from "../i18n/config";
 
 type D1Bindable = string | number | null;
 
@@ -52,6 +53,7 @@ export type PersistOrderInput = {
   status: "paid";
   schemaVersion: 1;
   createdAt: string;
+  checkoutLocale?: Locale | null;
   termsAcceptance?: CheckoutTermsAcceptance | null;
   lines: PersistedOrderLineInput[];
 };
@@ -71,6 +73,7 @@ type OrderRow = {
   shipping_zone: string | null;
   status: string;
   schema_version: number;
+  checkout_locale: string | null;
   terms_version: string | null;
   terms_accepted_at: string | null;
   created_at: string;
@@ -146,6 +149,9 @@ function assertValidInput(input: PersistOrderInput) {
     )
   ) {
     invalidFields.push("terms_acceptance");
+  }
+  if (input.checkoutLocale !== undefined && input.checkoutLocale !== null && !isLocale(input.checkoutLocale)) {
+    invalidFields.push("checkout_locale");
   }
   if (input.lines.length === 0) invalidFields.push("lines");
 
@@ -267,6 +273,7 @@ async function verifyExistingOrder(
     ["currency", order.currency, input.currency],
     ["amount_total", order.amount_total, input.amountTotal],
     ["schema_version", order.schema_version, input.schemaVersion],
+    ["checkout_locale", order.checkout_locale, input.checkoutLocale ?? null],
     ["terms_version", order.terms_version, input.termsAcceptance?.termsVersion ?? null],
     ["terms_accepted_at", order.terms_accepted_at, input.termsAcceptance?.termsAcceptedAt ?? null],
     ["created_at", order.created_at, input.createdAt],
@@ -360,6 +367,13 @@ export async function persistPaidOrder(db: OrdersDatabase, input: PersistOrderIn
     return { status: "already_exists" as const, orderId };
   }
 
+  if (input.checkoutLocale === null || input.checkoutLocale === undefined) {
+    throw new OrderPersistenceError({
+      code: "CHECKOUT_LOCALE_REQUIRED",
+      conflicting_fields: ["checkout_locale"],
+    });
+  }
+
   const orderId = crypto.randomUUID();
   const updatedAt = new Date().toISOString();
   const statements = [
@@ -369,9 +383,9 @@ export async function persistPaidOrder(db: OrdersDatabase, input: PersistOrderIn
           id, stripe_checkout_session_id, stripe_payment_intent_id,
           pennylane_invoice_id, customer_name, customer_email, currency, amount_total,
           products_subtotal, shipping_amount, shipping_country, shipping_zone,
-          status, schema_version, terms_version, terms_accepted_at, created_at, updated_at
+          status, schema_version, checkout_locale, terms_version, terms_accepted_at, created_at, updated_at
         ) VALUES (
-          ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18
+          ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19
         )`,
       )
       .bind(
@@ -389,6 +403,7 @@ export async function persistPaidOrder(db: OrdersDatabase, input: PersistOrderIn
         input.shipping?.shippingZone ?? null,
         input.status,
         input.schemaVersion,
+        input.checkoutLocale,
         input.termsAcceptance?.termsVersion ?? null,
         input.termsAcceptance?.termsAcceptedAt ?? null,
         input.createdAt,

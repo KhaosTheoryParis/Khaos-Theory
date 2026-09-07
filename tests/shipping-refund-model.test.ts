@@ -6,6 +6,7 @@ import {
   failRefundOperation,
   finalizeRefundOperation,
   getRefundContext,
+  getRefundShippingContext,
   getRefundPersistenceErrorDetails,
   reserveRefundOperationLines,
   reserveShippingRefundOperation,
@@ -23,6 +24,8 @@ const MIGRATIONS = [
   "0008_add_order_customer_name.sql",
   "0009_add_shipping_to_orders.sql",
   "0010_add_shipping_refunds.sql",
+  "0011_add_order_terms_acceptance.sql",
+  "0012_add_order_checkout_locale.sql",
 ] as const;
 
 const TIMESTAMP = "2026-08-30T12:00:00.000Z";
@@ -117,8 +120,8 @@ function insertShippingOrder(
     `INSERT INTO orders (
       id, stripe_checkout_session_id, stripe_payment_intent_id, pennylane_invoice_id,
       customer_email, currency, amount_total, status, schema_version, created_at, updated_at,
-      products_subtotal, shipping_amount, shipping_country, shipping_zone
-    ) VALUES (?, ?, ?, ?, ?, 'eur', ?, 'paid', 1, ?, ?, 25000, ?, ?, ?)`,
+      products_subtotal, shipping_amount, shipping_country, shipping_zone, checkout_locale
+    ) VALUES (?, ?, ?, ?, ?, 'eur', ?, 'paid', 1, ?, ?, 25000, ?, ?, ?, 'fr')`,
   ).run(
     orderId,
     `cs_test_shippingRefund${suffix}`,
@@ -134,6 +137,21 @@ function insertShippingOrder(
   );
   return orderId;
 }
+
+test("refund contexts expose the order's historical checkout locale", async () => {
+  const sqlite = database();
+  const db = new ServiceDatabaseAdapter(sqlite);
+  const orderId = insertShippingOrder(sqlite, 30, 1_000);
+  const orderLineId = insertOrderLine(sqlite, orderId, 30);
+  const lineContext = await getRefundContext(db, orderLineId);
+  const shippingContext = await getRefundShippingContext(db, orderId);
+  assert.equal(lineContext?.checkoutLocale, "fr");
+  assert.equal(shippingContext?.checkoutLocale, "fr");
+
+  const historicalOrderId = insertHistoricalOrder(sqlite, 31);
+  const historicalContext = await getRefundShippingContext(db, historicalOrderId);
+  assert.equal(historicalContext?.checkoutLocale, null);
+});
 
 function insertOrderLine(sqlite: DatabaseSync, orderId: string, suffix: number) {
   const orderLineId = identifier("22222222-2222-4222-8222", suffix);

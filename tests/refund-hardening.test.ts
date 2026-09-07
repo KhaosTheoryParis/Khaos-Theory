@@ -89,6 +89,8 @@ function refundDatabase(quantity = 3) {
     "migrations/0008_add_order_customer_name.sql",
     "migrations/0009_add_shipping_to_orders.sql",
     "migrations/0010_add_shipping_refunds.sql",
+    "migrations/0011_add_order_terms_acceptance.sql",
+    "migrations/0012_add_order_checkout_locale.sql",
   ]) {
     sqlite.exec(readFileSync(migration, "utf8"));
   }
@@ -216,6 +218,7 @@ function context(): RefundContext {
     pennylaneInvoiceId: "invoice-refund-hardening",
     pennylaneInvoiceLineId: "invoice-line-refund-hardening",
     customerEmail: "customer@example.test",
+    checkoutLocale: null,
   };
 }
 

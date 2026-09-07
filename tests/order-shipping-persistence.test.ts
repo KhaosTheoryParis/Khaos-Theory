@@ -25,6 +25,7 @@ const migrations = [
   "0009_add_shipping_to_orders.sql",
   "0010_add_shipping_refunds.sql",
   "0011_add_order_terms_acceptance.sql",
+  "0012_add_order_checkout_locale.sql",
 ];
 
 class StatementAdapter implements OrdersPreparedStatement {
@@ -80,7 +81,7 @@ class DatabaseAdapter implements OrdersDatabase {
 
 test("migration 0011 preserves existing orders and leaves historical acceptance NULL", () => {
   const sqlite = new DatabaseSync(":memory:");
-  for (const migration of migrations.slice(0, -1)) {
+  for (const migration of migrations.slice(0, -2)) {
     sqlite.exec(readFileSync(`migrations/${migration}`, "utf8"));
   }
   sqlite.prepare(
@@ -104,15 +105,20 @@ test("migration 0011 preserves existing orders and leaves historical acceptance 
   );
 
   sqlite.exec(readFileSync("migrations/0011_add_order_terms_acceptance.sql", "utf8"));
+  sqlite.exec(readFileSync("migrations/0012_add_order_checkout_locale.sql", "utf8"));
   const row = sqlite.prepare(
-    "SELECT terms_version, terms_accepted_at FROM orders WHERE id = ?",
+    "SELECT terms_version, terms_accepted_at, checkout_locale FROM orders WHERE id = ?",
   ).get("historical-order");
-  assert.deepEqual([row?.terms_version, row?.terms_accepted_at], [null, null]);
+  assert.deepEqual(
+    [row?.terms_version, row?.terms_accepted_at, row?.checkout_locale],
+    [null, null, null],
+  );
 });
 
 function order(
   shipping: PersistOrderInput["shipping"] = null,
   termsAcceptance: PersistOrderInput["termsAcceptance"] = null,
+  checkoutLocale: PersistOrderInput["checkoutLocale"] = "fr",
 ): PersistOrderInput {
   return {
     stripeCheckoutSessionId: "cs_test_shippingPersistence",
@@ -126,6 +132,7 @@ function order(
     status: "paid",
     schemaVersion: 1,
     createdAt: "2026-08-30T12:00:00.000Z",
+    checkoutLocale,
     termsAcceptance,
     lines: [{
       orderLineId: "11111111-1111-4111-8111-111111111111",
@@ -138,6 +145,42 @@ function order(
     }],
   };
 }
+
+test("checkout locale fr and en are persisted on new orders", async () => {
+  const db = new DatabaseAdapter();
+  const french = order(null, null, "fr");
+  const english = order(null, null, "en");
+  english.stripeCheckoutSessionId = "cs_test_checkoutLocaleEn";
+  english.stripePaymentIntentId = "pi_checkoutLocaleEn";
+  english.pennylaneInvoiceId = "invoice-checkout-locale-en";
+  english.lines = [{
+    ...english.lines[0],
+    orderLineId: "33333333-3333-4333-8333-333333333333",
+    stripeLineItemId: "li_checkoutLocaleEn",
+    pennylaneInvoiceLineId: "invoice-line-checkout-locale-en",
+  }];
+
+  await persistPaidOrder(db, french);
+  await persistPaidOrder(db, english);
+  const rows = db.sqlite.prepare(
+    "SELECT checkout_locale FROM orders ORDER BY stripe_checkout_session_id",
+  ).all() as Array<{ checkout_locale: string | null }>;
+  assert.deepEqual(rows.map((row) => row.checkout_locale), ["en", "fr"]);
+});
+
+test("a new order rejects an absent or invalid checkout locale", async () => {
+  const absent = order(null, null, null);
+  await assert.rejects(
+    persistPaidOrder(new DatabaseAdapter(), absent),
+    (error) => getOrderPersistenceErrorDetails(error).code === "CHECKOUT_LOCALE_REQUIRED",
+  );
+
+  const invalid = order(null, null, "de" as unknown as PersistOrderInput["checkoutLocale"]);
+  await assert.rejects(
+    persistPaidOrder(new DatabaseAdapter(), invalid),
+    (error) => getOrderPersistenceErrorDetails(error).code === "INVALID_ORDER_PERSISTENCE_INPUT",
+  );
+});
 
 test("current terms acceptance is persisted while historical orders remain nullable", async () => {
   const db = new DatabaseAdapter();

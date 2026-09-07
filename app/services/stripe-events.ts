@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { readCheckoutTermsAcceptance } from "./checkout-terms";
+import { isLocale } from "../i18n/config";
 import {
   getPennylaneErrorDetails,
   syncMultiLineRefundToPennylane,
@@ -83,6 +84,10 @@ async function createPennylaneInvoice(
 ) {
   const sessionId = session.id;
   const termsAcceptance = readCheckoutTermsAcceptance(session);
+  const checkoutLocale = session.metadata?.checkout_locale;
+  if (session.metadata?.schema_version === "1" && !isLocale(checkoutLocale)) {
+    throw new StripeEventProcessingError({ code: "INVALID_CHECKOUT_LOCALE" });
+  }
   trace("create_pennylane_invoice", "start", event);
   let processingErrorCode: string | null = null;
 
@@ -189,6 +194,7 @@ async function createPennylaneInvoice(
             status: "paid",
             schemaVersion: 1,
             createdAt: result.createdAt,
+            checkoutLocale: isLocale(checkoutLocale) ? checkoutLocale : null,
             termsAcceptance,
             lines: result.orderLineMappings,
           });

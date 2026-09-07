@@ -1,3 +1,4 @@
+import type { Locale } from "../i18n/config";
 import type { OrdersDatabase } from "./orders";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -8,7 +9,7 @@ export type RefundContext = {
   reservedRefundQuantity: number; stripeCheckoutSessionId: string;
   stripePaymentIntentId: string; amountTotal: number; currency: string;
   orderStatus: string; schemaVersion: number; pennylaneInvoiceId: string;
-  pennylaneInvoiceLineId: string; customerEmail: string;
+  pennylaneInvoiceLineId: string; customerEmail: string; checkoutLocale: Locale | null;
   shippingAmount?: number | null; shippingRefundedAmount?: number | null;
   reservedShippingRefundAmount?: number | null;
 };
@@ -50,6 +51,7 @@ type RefundContextRow = {
   stripe_checkout_session_id: string; stripe_payment_intent_id: string;
   amount_total: number; currency: string; order_status: string; schema_version: number;
   pennylane_invoice_id: string; pennylane_invoice_line_id: string; customer_email: string;
+  checkout_locale: Locale | null;
   shipping_amount: number | null; shipping_refunded_amount: number | null;
   reserved_shipping_refund_amount: number | null;
 };
@@ -85,6 +87,7 @@ export type RefundShippingContext = {
   schemaVersion: number;
   pennylaneInvoiceId: string;
   customerEmail: string;
+  checkoutLocale: Locale | null;
   productsSubtotal: number | null;
   shippingAmount: number | null;
   shippingCountry: string | null;
@@ -102,6 +105,7 @@ type RefundShippingContextRow = {
   schema_version: number;
   pennylane_invoice_id: string;
   customer_email: string;
+  checkout_locale: Locale | null;
   products_subtotal: number | null;
   shipping_amount: number | null;
   shipping_country: string | null;
@@ -127,6 +131,7 @@ function mapContext(row: RefundContextRow): RefundContext {
     currency: row.currency, orderStatus: row.order_status, schemaVersion: row.schema_version,
     pennylaneInvoiceId: row.pennylane_invoice_id,
     pennylaneInvoiceLineId: row.pennylane_invoice_line_id, customerEmail: row.customer_email,
+    checkoutLocale: row.checkout_locale,
     shippingAmount: row.shipping_amount,
     shippingRefundedAmount: row.shipping_refunded_amount,
     reservedShippingRefundAmount: row.reserved_shipping_refund_amount,
@@ -199,7 +204,7 @@ export async function getRefundContext(db: OrdersDatabase, orderLineId: string):
             ol.reserved_refund_quantity, o.stripe_checkout_session_id,
             o.stripe_payment_intent_id, o.amount_total, o.currency,
             o.status AS order_status, o.schema_version, o.pennylane_invoice_id,
-            ol.pennylane_invoice_line_id, o.customer_email,
+            ol.pennylane_invoice_line_id, o.customer_email, o.checkout_locale,
             o.shipping_amount, o.shipping_refunded_amount,
             o.reserved_shipping_refund_amount
      FROM order_lines ol INNER JOIN orders o ON o.id = ol.order_id
@@ -231,7 +236,7 @@ export async function getRefundShippingContext(
   const row = await db.prepare(
     `SELECT id, stripe_checkout_session_id, stripe_payment_intent_id,
             amount_total, currency, status, schema_version, pennylane_invoice_id,
-            customer_email, products_subtotal, shipping_amount, shipping_country,
+            customer_email, checkout_locale, products_subtotal, shipping_amount, shipping_country,
             shipping_zone, shipping_refunded_amount, reserved_shipping_refund_amount
      FROM orders WHERE id = ?1`,
   ).bind(orderId).first<RefundShippingContextRow>();
@@ -245,6 +250,7 @@ export async function getRefundShippingContext(
     schemaVersion: row.schema_version,
     pennylaneInvoiceId: row.pennylane_invoice_id,
     customerEmail: row.customer_email,
+    checkoutLocale: row.checkout_locale,
     productsSubtotal: row.products_subtotal,
     shippingAmount: row.shipping_amount,
     shippingCountry: row.shipping_country,

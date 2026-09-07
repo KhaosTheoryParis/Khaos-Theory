@@ -267,6 +267,7 @@ test("the structured refund flow forwards a shipping-only operation without prod
     schemaVersion: 1,
     pennylaneInvoiceId: "invoice-shipping-only",
     customerEmail: "shipping-only@example.test",
+    checkoutLocale: null,
     productsSubtotal: 25_000,
     shippingAmount: 1_000,
     shippingCountry: "FR",

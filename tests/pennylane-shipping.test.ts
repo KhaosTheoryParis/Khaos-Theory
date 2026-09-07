@@ -31,6 +31,7 @@ const migrations = [
   "0009_add_shipping_to_orders.sql",
   "0010_add_shipping_refunds.sql",
   "0011_add_order_terms_acceptance.sql",
+  "0012_add_order_checkout_locale.sql",
 ];
 
 class StatementAdapter implements OrdersPreparedStatement {
@@ -108,7 +109,9 @@ function session({
     currency: "eur",
     amount_subtotal: productsSubtotal,
     amount_total: amountTotal,
-    metadata: schemaVersion === null ? {} : { schema_version: schemaVersion },
+    metadata: schemaVersion === null
+      ? {}
+      : { schema_version: schemaVersion, checkout_locale: "fr" },
     created: 1_788_091_200,
     customer_email: "shipping@example.test",
     customer_details: {
@@ -480,13 +483,39 @@ test("checkout.session.completed persists normalized paid shipping", async () =>
 
   const row = db.sqlite.prepare(
     `SELECT products_subtotal, shipping_amount, shipping_country,
-      shipping_zone, amount_total FROM orders`,
+      shipping_zone, amount_total, checkout_locale FROM orders`,
   ).get();
   assert.deepEqual(
     [row?.products_subtotal, row?.shipping_amount, row?.shipping_country,
-      row?.shipping_zone, row?.amount_total],
-    [39_000, 1_000, "FR", "FR", 40_000],
+      row?.shipping_zone, row?.amount_total, row?.checkout_locale],
+    [39_000, 1_000, "FR", "FR", 40_000, "fr"],
   );
+});
+
+test("new schema-v1 checkout sessions reject missing or invalid locale before Pennylane", async () => {
+  for (const checkoutLocale of [undefined, "de"]) {
+    const checkoutSession = session({ shippingAmount: 1_000 });
+    checkoutSession.metadata = { schema_version: "1" };
+    if (checkoutLocale !== undefined) checkoutSession.metadata.checkout_locale = checkoutLocale;
+    const db = new DatabaseAdapter();
+    const mock = mockPennylane();
+
+    await assert.rejects(
+      withPennylaneMock(mock, () => processStripeEvent({
+        event: checkoutCompletedEvent(checkoutSession),
+        env: {
+          STRIPE_SECRET_KEY: "sk_test_not_real",
+          PENNYLANE_API_TOKEN: "fake-pennylane-token",
+          DB: db,
+        },
+        stripe: stripeFor(checkoutSession),
+        trace: () => undefined,
+      })),
+      /INVALID_CHECKOUT_LOCALE/,
+    );
+    assert.equal(mock.fetchCalls, 0);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM orders").get()?.count, 0);
+  }
 });
 
 test("checkout.session.completed requires and persists authoritative terms on new sessions", async () => {

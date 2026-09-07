@@ -62,7 +62,7 @@ class SQLiteDatabaseAdapter implements OrdersDatabase {
 
 function migratedDatabase() {
   const sqlite = new DatabaseSync(":memory:");
-  for (let version = 1; version <= 11; version += 1) {
+  for (let version = 1; version <= 12; version += 1) {
     const prefix = String(version).padStart(4, "0");
     const migration = [
       "0001_create_orders.sql",
@@ -76,6 +76,7 @@ function migratedDatabase() {
       "0009_add_shipping_to_orders.sql",
       "0010_add_shipping_refunds.sql",
       "0011_add_order_terms_acceptance.sql",
+      "0012_add_order_checkout_locale.sql",
     ][version - 1];
     assert.ok(migration?.startsWith(prefix));
     sqlite.exec(readFileSync(`migrations/${migration}`, "utf8"));
@@ -95,6 +96,7 @@ function paidOrder(customerName: string | null): PersistOrderInput {
     status: "paid",
     schemaVersion: 1,
     createdAt: "2026-08-29T12:00:00.000Z",
+    checkoutLocale: "fr",
     lines: [{
       orderLineId: "11111111-1111-4111-8111-111111111111",
       stripeLineItemId: "li_customerName",
