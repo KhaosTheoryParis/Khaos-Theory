@@ -348,10 +348,14 @@
     font-size: 10px;
     letter-spacing: 0.1em;
   }
+
+  .localized-public .checkout-summary {
+    padding-top: 132px;
+  }
 }
 
 .localized-public .shipping-address {
-  margin: 8px 0 0;
+  margin: 14px 0 0;
   padding: 12px;
   border: 1px solid #222;
 }
@@ -380,7 +384,7 @@
 
 .localized-public .checkout-summary {
   min-height: auto;
-  padding: 72px 8vw 44px;
+  padding: 108px 8vw 44px;
 }
 
 .localized-public .checkout-summary .section-title {
@@ -415,7 +419,7 @@
   display: block;
   flex-direction: initial;
   justify-content: initial;
-  margin: 8px 0 0;
+  margin: 14px 0 0;
   padding: 12px;
   border: 1px solid #222;
 }
@@ -435,7 +439,7 @@
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  margin-top: 8px;
+  margin-top: 14px;
   padding-top: 8px;
   border-top: 1px solid #222;
   font-size: 16px;
@@ -443,12 +447,12 @@
 }
 
 .localized-public .checkout-total {
-  margin-top: 6px;
+  margin-top: 8px;
   padding: 8px 0;
 }
 
 .localized-public .stripe-checkout-button {
-  margin-top: 10px;
+  margin-top: 14px;
 }
 
 .localized-public .shipping-preview-row strong {
@@ -528,7 +532,7 @@
 
 @media (max-width: 700px) {
   .localized-public .checkout-summary {
-    padding: 64px 16px 30px;
+    padding: 118px 16px 30px;
   }
 
   .localized-public .checkout-summary .section-title {
@@ -550,6 +554,15 @@
   .localized-public .shipping-address,
   .localized-public .stripe-element-section {
     padding: 10px 12px;
+  }
+
+  .localized-public .shipping-address,
+  .localized-public .stripe-element-section {
+    margin-top: 12px;
+  }
+
+  .localized-public .shipping-preview-row {
+    margin-top: 14px;
   }
 
   .localized-public .localized-header-bar {
