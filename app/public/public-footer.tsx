@@ -15,6 +15,7 @@ export default function PublicFooter({ locale }: PublicFooterProps) {
       <span>{dictionary.footer.city}</span>
       <a href={localizedHref(locale, "contact")}>{dictionary.footer.contact}</a>
       <a href={localizedHref(locale, "terms")}>{dictionary.common.terms}</a>
+      <a href={localizedHref(locale, "privacy")}>{dictionary.common.privacy}</a>
       <a href={localizedHref(locale, "legal")}>{dictionary.common.legalNotice}</a>
     </footer>
   );
