@@ -31,7 +31,7 @@ export default async function PrivacyPage({ params }: PrivacyPageProps) {
             {privacy.sections.map((section, index) => (
               <div key={section.heading}>
                 <h2 id={`privacy-section-${index + 1}`}>{section.heading}</h2>
-                {section.paragraphs.map((paragraph) => <PrivacyParagraph key={paragraph} text={paragraph} />)}
+                {section.paragraphs.map((paragraph) => <PrivacyParagraph key={paragraph} text={paragraph} locale={locale} />)}
               </div>
             ))}
           </div>
@@ -42,13 +42,15 @@ export default async function PrivacyPage({ params }: PrivacyPageProps) {
   );
 }
 
-function PrivacyParagraph({ text }: { text: string }) {
+function PrivacyParagraph({ text, locale }: { text: string; locale: "fr" | "en" }) {
   const lines = text.split("\n");
   return (
     <p>
       {lines.map((line, index) => (
         <Fragment key={`${line}-${index}`}>
-          {line}
+          {line === `/${locale}/cookies` || line === "https://www.cnil.fr/"
+            ? <a href={line}>{line}</a>
+            : line}
           {index < lines.length - 1 ? <br /> : null}
         </Fragment>
       ))}
