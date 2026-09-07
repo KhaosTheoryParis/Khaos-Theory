@@ -8,7 +8,7 @@ export const fr = {
     bracelets: "Bracelets",
     earrings: "Boucles d’oreilles",
     pendants: "Pendentifs",
-    about: "ABOUT",
+    about: "À PROPOS",
     contact: "KONTACT",
     cart: "MON PANIER",
   },
@@ -18,6 +18,8 @@ export const fr = {
   common: {
     home: "Accueil",
     legalNotice: "Mentions légales",
+    terms: "Conditions Générales de Vente",
+    privacy: "Politique de confidentialité",
   },
   notFound: {
     title: "Page introuvable",
@@ -103,7 +105,7 @@ export const fr = {
     returnHome: "RETOUR À L’ACCUEIL",
   },
   about: {
-    title: "About",
+    title: "À propos",
     message: "La beauté émerge parfois de l’inattendu. À travers ses bijoux, Khaos Theory explore la tension entre structure et chaos, contrôle et lâcher-prise.",
   },
   contact: {
