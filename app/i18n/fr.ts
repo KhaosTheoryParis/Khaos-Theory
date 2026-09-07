@@ -20,6 +20,7 @@ export const fr = {
     legalNotice: "Mentions légales",
     terms: "Conditions Générales de Vente",
     privacy: "Politique de confidentialité",
+    cookies: "Cookies et technologies similaires",
   },
   notFound: {
     title: "Page introuvable",

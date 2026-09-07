@@ -18,6 +18,7 @@ export type TranslationDictionary = {
     legalNotice: string;
     terms: string;
     privacy: string;
+    cookies: string;
   };
   notFound: {
     title: string;

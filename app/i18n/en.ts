@@ -20,6 +20,7 @@ export const en = {
     legalNotice: "Legal notice",
     terms: "Terms and Conditions",
     privacy: "Privacy Policy",
+    cookies: "Cookies and similar technologies",
   },
   notFound: {
     title: "Page not found",
