@@ -16,6 +16,8 @@ export type TranslationDictionary = {
   common: {
     home: string;
     legalNotice: string;
+    terms: string;
+    privacy: string;
   };
   notFound: {
     title: string;

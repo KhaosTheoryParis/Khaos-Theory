@@ -18,6 +18,8 @@ export const en = {
   common: {
     home: "Home",
     legalNotice: "Legal notice",
+    terms: "Terms and Conditions",
+    privacy: "Privacy Policy",
   },
   notFound: {
     title: "Page not found",
